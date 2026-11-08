@@ -156,6 +156,18 @@ struct Index {
         'return JSON.stringify({w:w,n:out.length,items:out});}catch(e){return "ERR:"+e.message;}})()')
         .then((r: string) => { hilog.info(0x0000, TAG, 'overflow %{public}s', r); })
         .catch(() => {});
+      this.controller.runJavaScript(
+        '(function(){try{var out=[],all=document.querySelectorAll("body *");' +
+        'for(var i=0;i<all.length&&out.length<8;i++){var e=all[i];' +
+        'if(!e.clientWidth&&!e.clientHeight)continue;' +
+        'if(e.scrollWidth<=e.clientWidth+2)continue;' +
+        'var cs=getComputedStyle(e);' +
+        'out.push({c:(e.className||e.tagName).toString().slice(0,24),' +
+        'sw:e.scrollWidth,cw:e.clientWidth,ov:cs.overflowX,ws:cs.whiteSpace,' +
+        't:(e.innerText||"").replace(/\s+/g," ").slice(0,26)});}' +
+        'return JSON.stringify({n:out.length,items:out});}catch(e){return "ERR:"+e.message;}})()')
+        .then((r: string) => { hilog.info(0x0000, TAG, 'clip %{public}s', r); })
+        .catch(() => {});
     }, 1500);
     this.settle();
   }
@@ -293,34 +305,48 @@ struct Index {
 
   @Builder
   setupView() {
-    Column({ space: 16 }) {
-      Text('DSH Mobile').fontSize(34).fontWeight(FontWeight.Bold)
-      Text('HarmonyOS port · connect to a dsh web host').fontSize(14).fontColor('#666666')
-      TextInput({ placeholder: 'http://<host>:<port>/?token=...', text: $$this.draft })
-        .width('100%').height(48).margin({ top: 12 })
-      Button('Connect').width('100%').height(44).onClick(() => this.connect())
-      Button('Scan QR code')
-        .width('100%').height(44)
-        .backgroundColor('#0A59F7')
-        .onClick(() => this.scan())
-      if (this.hint.length > 0) {
-        Text(this.hint).fontSize(13).fontColor('#E84026').textAlign(TextAlign.Center)
+    // Scrollable: the old fixed Column clipped its own content (title/notes cut off)
+    // whenever the content was taller than the viewport.
+    Scroll() {
+      Column({ space: 14 }) {
+        Text('DSH Mobile').fontSize(32).fontWeight(FontWeight.Bold)
+        Text('HarmonyOS port · connect to a dsh web host')
+          .fontSize(13).fontColor('#666666').textAlign(TextAlign.Center)
+          .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+        TextInput({ placeholder: 'http://<host>:<port>/?token=...', text: $$this.draft })
+          .width('100%').height(48).margin({ top: 10 })
+        Button('Connect').width('100%').height(44).onClick(() => this.connect())
+        Button('Scan QR code')
+          .width('100%').height(44)
+          .backgroundColor('#0A59F7')
+          .onClick(() => this.scan())
+        if (this.hint.length > 0) {
+          Text(this.hint).fontSize(13).fontColor('#E84026')
+            .textAlign(TextAlign.Center).width('100%').maxLines(3)
+        }
+        if (this.error.length > 0) {
+          Text(this.error).fontSize(13).fontColor('#E84026')
+            .textAlign(TextAlign.Center).width('100%').maxLines(2)
+        }
+        Text('Run `dsh web` on a PC/server, then paste the URL it prints. The token is single-use.')
+          .fontSize(12).fontColor('#999999').textAlign(TextAlign.Center)
+          .width('100%').maxLines(4)
+        Row({ space: 6 }) {
+          SymbolGlyph($r('sys.symbol.link')).fontSize(15).fontColor(['#0A59F7'])
+          Text('github.com/cnzht')
+            .fontSize(13).fontColor('#0A59F7')
+            .decoration({ type: TextDecorationType.Underline, color: '#0A59F7' })
+        }
+        .margin({ top: 6, bottom: 12 })
+        .onClick(() => this.openGithub())
       }
-      if (this.error.length > 0) {
-        Text(this.error).fontSize(13).fontColor('#E84026')
-      }
-      Text('Run `dsh web` on a PC/server, then paste the URL it prints.\nThe token is single-use; a server restart issues a new one.')
-        .fontSize(12).fontColor('#999999').textAlign(TextAlign.Center).margin({ top: 8 })
-      Row({ space: 8 }) {
-        SymbolGlyph($r('sys.symbol.link')).fontSize(16).fontColor(['#0A59F7'])
-        Text('github.com/cnzht')
-          .fontSize(13).fontColor('#0A59F7')
-          .decoration({ type: TextDecorationType.Underline, color: '#0A59F7' })
-      }
-      .margin({ top: 18 })
-      .onClick(() => this.openGithub())
+      .width('100%')
+      .padding({ left: 24, right: 24, top: 40, bottom: 40 })
     }
-    .width('100%').height('100%').padding(28).justifyContent(FlexAlign.Center)
+    .width('100%').height('100%')
+    .align(Alignment.Center)
+    .scrollBar(BarState.Off)
     .backgroundColor('#F5F5F7')
   }
 
