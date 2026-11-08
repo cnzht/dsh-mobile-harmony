@@ -100,13 +100,19 @@ struct Index {
       'var oid="dsh-mobile-override";var o=document.getElementById(oid);if(o){o.remove();}' +
       'var s2=document.createElement("style");s2.id=oid;s2.textContent=' + JSON.stringify(overrides) + ';' +
       '(document.head||document.documentElement).appendChild(s2);' +
-      'if(!window.__dshErrs){window.__dshErrs=[];' +'window.addEventListener("error",function(e){window.__dshErrs.push(String(e.message||"err").slice(0,120));},true);' +'window.addEventListener("unhandledrejection",function(e){window.__dshErrs.push("rej:"+String(e.reason).slice(0,100));});}' +'if(!window.__dshOutsideTap){window.__dshOutsideTap=true;' +
+      'if(!window.__dshErrs){window.__dshErrs=[];' +
+      'window.addEventListener("error",function(e){window.__dshErrs.push(String(e.message||"err").slice(0,120));},true);' +
+      'window.addEventListener("unhandledrejection",function(e){window.__dshErrs.push(String(e.reason).slice(0,80));});}' +
+      'if(!window.__dshOutsideTap){window.__dshOutsideTap=true;' +
       'document.addEventListener("click",function(ev){' +
       'if(!document.body.classList.contains("dsh-user-drawer"))return;' +
-      'var p=document.querySelector("div[class*=_sidebarCol]");' +
-      'if(p&&p.contains(ev.target))return;' +
+      'if(window.__dshOpenGuard&&Date.now()-window.__dshOpenGuard<1500)return;' +
+      'var t=ev.target;' +
+      'if(t&&t.closest&&t.closest("button[class*=_toggle],button[aria-label*=Sidebar],button[aria-label*=Open]"))return;' +
+      'var pnl=document.querySelector("div[class*=_sidebarCol]");' +
+      'if(pnl&&pnl.contains(t))return;' +
       'document.body.classList.remove("dsh-user-drawer");},true);}' +
-      '})();';
+      '})();'
   }
 
   /**
@@ -213,19 +219,28 @@ struct Index {
   private toggleSessions(): void {
     const next: boolean = !this.sessionsOpen;
     this.sessionsOpen = next;
-    const js = next
-      ? '(function(){try{var b=document.body;b.classList.add("dsh-user-drawer");' +
-        'var col=document.querySelector("div[class*=_sidebarCol]");' +
-        'var w=col?col.getBoundingClientRect().width:0;' +
-        'if(w<60){var t=document.querySelector("button[aria-label*=打开]")||' +
-        'document.querySelector("button[class*=_toggle]");if(t){t.click();}}' +
-        'var m=document.getElementById("dsh-mobile-drawer-mask");' +
-        'if(m&&!m.__dshCloseTap){m.__dshCloseTap=true;' +
-        'm.addEventListener("click",function(){document.body.classList.remove("dsh-user-drawer");},true);}' +
-        'return "open";}catch(e){return "ERR:"+e.message;}})()'
-      : '(function(){try{document.body.classList.remove("dsh-user-drawer");' +
-        'return "closed";}catch(e){return "ERR";}})()';
-    this.controller.runJavaScript(js)
+    // dsh's control is labelled in the UI language ("打开侧边栏" /
+    // "Open sidebar"), so locate it by label text rather than by class name.
+    // Match the sidebar control specifically: plain "\u6253\u5f00" (open) also appears in
+    // unrelated actions such as "open with file manager", which we must not click.
+    const findToggle =
+      'var cand=document.querySelectorAll("button"),tg=null;' +
+      'for(var i=0;i<cand.length;i++){var a=cand[i].getAttribute("aria-label")||"";' +
+      'var lb=a.toLowerCase();' +
+      'if(a.indexOf("\\u4fa7\\u8fb9\\u680f")>=0||lb.indexOf("sidebar")>=0){' +
+      'var rr=cand[i].getBoundingClientRect();if(rr.width>0&&rr.top<220){tg=cand[i];break;}}}';
+const openJs = '(function(){try{var b=document.body;window.__dshOpenGuard=Date.now();' +
+      'b.classList.add("dsh-user-drawer");' +
+      findToggle +
+      'if(tg){tg.click();}' +
+      'setTimeout(function(){var c2=document.querySelector("div[class*=_sidebarCol]");' +
+      'var w2=c2?c2.getBoundingClientRect().width:0;' +
+      'if(w2<60){' + findToggle + 'if(tg){tg.click();}}' +
+      'document.body.classList.add("dsh-user-drawer");window.__dshOpenGuard=Date.now();},450);' +
+      'setTimeout(function(){try{var b=document.body;' +'var c=document.querySelector("div[class*=_sidebarCol]");' +'var cr=c?c.getBoundingClientRect():null;' +'var fx=document.querySelectorAll("body *"),cov=[];' +'for(var i=0;i<fx.length&&cov.length<5;i++){var e=fx[i];var r=e.getBoundingClientRect();' +'var cs=getComputedStyle(e);' +'if(cs.position!=="fixed")continue;' +'if(r.width*innerHeight<0.45*innerWidth*innerHeight)continue;' +'cov.push((e.className||e.tagName).toString().slice(0,26)+"|z"+cs.zIndex+"|bg"+cs.backgroundColor.slice(0,20));}' +'console.log("DSHSESS "+JSON.stringify({cls:b.className.slice(0,60),' +'sb:c?Math.round(cr.width):-1,cov:cov}));}catch(e){}},1600);' +'return "open found="+(tg?1:0);}catch(e){return "ERR:"+e.message;}})()';
+    const closeJs = '(function(){try{document.body.classList.remove("dsh-user-drawer");' +
+      'return "closed";}catch(e){return "ERR";}})()';
+    this.controller.runJavaScript(next ? openJs : closeJs)
       .then((r: string) => { hilog.info(0x0000, TAG, 'sessions %{public}s', r); })
       .catch(() => {});
   }
