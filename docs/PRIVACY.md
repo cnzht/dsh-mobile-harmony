@@ -37,7 +37,7 @@
 | 权限 | 用途 |
 |---|---|
 | `ohos.permission.INTERNET` | 连接你指定的服务器以显示界面 |
-| `ohos.permission.GET_NETWORK_INFO` | 判断网络是否可用，给出准确错误提示 |
+| `ohos.permission.INTERNET` | 判断网络是否可用，给出准确错误提示 |
 
 本应用不申请相机权限以外的敏感权限；扫码功能使用系统扫码器，
 若不使用扫码功能，可拒绝相机授权，手填地址同样可用。

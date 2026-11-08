@@ -32,7 +32,7 @@ DSH Mobile 是 DeepSeek Harness（一款开源 AI 编码助手）的移动端客
 1. ohos.permission.INTERNET
    用途：访问用户指定的 DeepSeek Harness 服务地址。
    必要性：应用核心功能就是连接并展示该服务界面，无此权限无法使用。
-2. ohos.permission.GET_NETWORK_INFO
+2. ohos.permission.INTERNET
    用途：判断当前网络是否可用，在加载失败时给出准确提示。
    必要性：用于错误提示文案（"请检查网络" vs "地址不可达"）。
 
@@ -80,7 +80,7 @@ to connect to the user's own instance.
 [Permissions]
 1. ohos.permission.INTERNET - reach the user-specified Harness service; the app's
    core function is to render that service, so it cannot work without it.
-2. ohos.permission.GET_NETWORK_INFO - determine network availability to produce
+2. ohos.permission.INTERNET - determine network availability to produce
    accurate error messages ("check network" vs "host unreachable").
 
 [Data and privacy]
