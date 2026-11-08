@@ -1,0 +1,45 @@
+{
+  "app": {
+    // 留空，避免把任何人的调试证书/密码提交到仓库。
+    // 首次构建请在 DevEco Studio 中：
+    //   File > Project Structure > Signing Configs > 勾选 "Automatically generate signature"
+    // 由 IDE 自动写入本文件的 material 字段（勿提交）。
+    "signingConfigs": [],
+    "products": [
+      {
+        "name": "default",
+        "targetSdkVersion": "26.0.0",
+        "compatibleSdkVersion": "26.0.0",
+        "runtimeOS": "HarmonyOS",
+        "buildOption": {
+          "strictMode": {
+            "caseSensitiveCheck": true,
+            "useNormalizedOHMUrl": true
+          }
+        }
+      }
+    ],
+    "buildModeSet": [
+      {
+        "name": "debug"
+      },
+      {
+        "name": "release"
+      }
+    ]
+  },
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "./entry",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    }
+  ]
+}
