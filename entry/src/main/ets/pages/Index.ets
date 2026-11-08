@@ -86,7 +86,11 @@ struct Index {
     const overrides = 'body:not(.dsh-user-drawer) div[class*="_sidebarCol"]{display:none!important}' +
       '#dsh-mobile-drawer-mask{display:none!important}' +
       'body.dsh-user-drawer div[class*="_sidebarCol"]{z-index:2147483600!important;' +
-      'box-shadow:0 0 24px rgba(0,0,0,.25)!important;background:#fff!important}';
+      'box-shadow:0 0 24px rgba(0,0,0,.25)!important;background:#fff!important}' +
+      'button,[role=button]{min-height:40px!important}' +
+      'body{padding-bottom:env(safe-area-inset-bottom,0px)!important}' +
+      '[class*=label],[class*=title],[class*=name]{overflow-wrap:break-word!important}' +
+      'textarea,[contenteditable=true]{max-height:32vh!important;overflow-y:auto!important}';
     return '(function(){var id="dsh-mobile-css";var old=document.getElementById(id);if(old){old.remove();}' +
       'var s=document.createElement("style");s.id=id;s.textContent=' + JSON.stringify(this.css) + ';' +
       '(document.head||document.documentElement).appendChild(s);' +
@@ -170,6 +174,7 @@ struct Index {
         .catch(() => {});
     }, 1500);
     this.settle();
+    setTimeout(() => this.auditButtons(), 5000);
   }
 
   /**
@@ -234,29 +239,42 @@ struct Index {
       .catch(() => {});
   }
   /**
-   * Debug: measure the chat page layout (composer, clipping, scroll) so mobile
-   * adaptation problems can be located without guessing.
+   * Debug: walk workspace/session selection, then measure the chat page layout
+   * (composer geometry, clipped text, overflow, small tap targets).
    */
   private auditButtons(): void {
     this.controller.runJavaScript(
-      '(function(){try{var vw=innerWidth,vh=innerHeight;' +
-      'var out={vw:vw,vh:vh,docH:document.documentElement.scrollHeight,bodyH:document.body.scrollHeight,' +
-      'scrollY:Math.round(scrollY),clipped:[],boxes:{}};' +
+      '(function(){try{' +
+      'function byText(re){var all=document.querySelectorAll("body *");' +
+      'for(var i=0;i<all.length;i++){var e=all[i];var t=(e.innerText||"").trim();' +
+      'if(t.length&&t.length<40&&re.test(t)){var r=e.getBoundingClientRect();' +
+      'if(r.width>20&&r.height>10)return e;}}return null;}' +
+      'function tap(e,n){if(!e){console.log("DSHNAV miss "+n);return;}try{e.click();console.log("DSHNAV tap "+n);}catch(x){}}' +
+      'tap(byText(/选择一个工作区/),"pick");' +
+      'setTimeout(function(){var b=document.querySelectorAll("[class*=workspace],[class*=Workspace],li,[role=listitem]");' +
+      'tap(b.length?b[0]:null,"ws1");' +
+      'setTimeout(function(){var s=document.querySelectorAll("[class*=session],[class*=Session],[class*=history] li");' +
+      'tap(s.length?s[0]:null,"session");' +
+      'setTimeout(function(){measure();},1400);},1400);},1200);' +
+      'function measure(){var vw=innerWidth,vh=innerHeight;var out={vw:vw,vh:vh,docH:document.documentElement.scrollHeight,' +
+      'clipped:[],small:0,boxes:{},title:document.title.slice(0,26),textLen:(document.body.innerText||"").length};' +
       'var ta=document.querySelector("textarea,[contenteditable=true]");' +
       'if(ta){var r=ta.getBoundingClientRect();out.boxes.composer={x:Math.round(r.left),y:Math.round(r.top),' +
       'w:Math.round(r.width),h:Math.round(r.height),bottom:Math.round(r.bottom)};}' +
-      'var all=document.querySelectorAll("body *");var below=0;' +
-      'for(var i=0;i<all.length;i++){var e=all[i];' +
-      'if(!e.clientWidth&&!e.clientHeight)continue;' +
+      'var all=document.querySelectorAll("body *");var w2=0;' +
+      'var danger=/删除|清空|中断|停止|delete|clear|stop/i;' +
+      'for(var i=0;i<all.length;i++){var e=all[i];if(!e.clientWidth&&!e.clientHeight)continue;' +
       'var cs=getComputedStyle(e);' +
       'if(e.scrollWidth>e.clientWidth+2&&cs.overflowX!=="visible"&&out.clipped.length<6){' +
-      'out.clipped.push({c:(e.className||e.tagName).toString().slice(0,22),sw:e.scrollWidth,cw:e.clientWidth,' +
-      't:(e.innerText||"").replace(/\\s+/g," ").slice(0,24)});}' +
-      'var rr=e.getBoundingClientRect();if(rr.top>vh-4&&rr.height>10)below++;}' +
-      'out.belowViewport=below;' +
-      'console.log("DSHLAYOUT "+JSON.stringify(out));' +
-      'return "ok";}catch(e){return "ERR:"+e.message;}})()')
-      .then((r: string) => { hilog.info(0x0000, TAG, 'layout %{public}s', r); })
+      'out.clipped.push({c:(e.className||e.tagName).toString().slice(0,20),sw:e.scrollWidth,cw:e.clientWidth,' +
+      't:(e.innerText||"").replace(/\s+/g," ").slice(0,22)});}' +
+      'var rr=e.getBoundingClientRect();' +
+      'if(rr.width>vw+2||rr.left<-2){w2++;}' +
+      'if((e.tagName==="BUTTON"||e.getAttribute("role")==="button")&&rr.height>0&&rr.height<36&&!danger.test(e.innerText||""))out.small++;}' +
+      'out.overflowX=w2;' +
+      'console.log("DSHLAYOUT "+JSON.stringify(out));}' +
+      'return "started";}catch(e){return "ERR:"+e.message;}})()')
+      .then((r: string) => { hilog.info(0x0000, TAG, 'audit %{public}s', r); })
       .catch(() => {});
   }
 
@@ -362,22 +380,20 @@ struct Index {
       // Slim opaque bar instead of a floating translucent pill: the pill sat on
       // top of the dsh UI and read as a permanent overlay ("蒙层").
       Row() {
-        Text('DSH Mobile').fontSize(13).fontColor('#666666')
         Button('Sessions')
-          .fontSize(12).height(30).padding({ left: 12, right: 12 })
+          .fontSize(11).height(28).padding({ left: 10, right: 10 })
           .backgroundColor('#EBECEF').fontColor('#182431')
           .onClick(() => this.toggleSessions())
         Blank()
         Button('Setup')
-          .fontSize(12).height(30).padding({ left: 14, right: 14 })
+          .fontSize(11).height(28).padding({ left: 12, right: 12 })
           .backgroundColor('#EBECEF').fontColor('#182431')
           .onClick(() => {
             this.lastInjectedUrl = '';
             this.url = '';
           })
       }
-      .width('100%').height(44).padding({ left: 16, right: 12 })
-      .backgroundColor('#FFFFFF')
+      .width('100%').height(34).padding({ left: 12, right: 10 })
 
       Web({ src: this.url, controller: this.controller })
         .layoutWeight(1).width('100%')
