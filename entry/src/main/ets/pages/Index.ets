@@ -22,6 +22,8 @@ struct Index {
   @State draft: string = '';
   @State error: string = '';
   @State hint: string = '';
+  @State loading: boolean = false;
+  @State sessionsOpen: boolean = false;
   private early: string = '';
   private inject: string = '';
   private css: string = '';
@@ -69,6 +71,7 @@ struct Index {
     this.error = '';
     this.hint = '';
     this.lastInjectedUrl = '';
+    this.loading = true;
     this.url = target;
     if (this.prefs !== undefined) {
       this.prefs.putSync('serverUrl', target);
@@ -208,20 +211,31 @@ struct Index {
    * dsh renders closes it again, and we drop our class on that tap.
    */
   private toggleSessions(): void {
-    this.controller.runJavaScript(
-      '(function(){try{var b=document.body;' +
-      'if(b.classList.contains("dsh-user-drawer")){b.classList.remove("dsh-user-drawer");return "closed";}' +
-      'var col=document.querySelector("div[class*=_sidebarCol]");' +
-      'b.classList.add("dsh-user-drawer");' +
-      'var w=col?col.getBoundingClientRect().width:0;' +
-      'if(w<60){var t=document.querySelector("button[aria-label*=打开]")||' +
-      'document.querySelector("button[class*=_toggle]");if(t){t.click();}}' +
-      'var m=document.getElementById("dsh-mobile-drawer-mask");' +
-      'if(m&&!m.__dshCloseTap){m.__dshCloseTap=true;' +
-      'm.addEventListener("click",function(){document.body.classList.remove("dsh-user-drawer");},true);}' +
-      'return "open w="+Math.round(w);}catch(e){return "ERR:"+e.message;}})()')
+    const next: boolean = !this.sessionsOpen;
+    this.sessionsOpen = next;
+    const js = next
+      ? '(function(){try{var b=document.body;b.classList.add("dsh-user-drawer");' +
+        'var col=document.querySelector("div[class*=_sidebarCol]");' +
+        'var w=col?col.getBoundingClientRect().width:0;' +
+        'if(w<60){var t=document.querySelector("button[aria-label*=打开]")||' +
+        'document.querySelector("button[class*=_toggle]");if(t){t.click();}}' +
+        'var m=document.getElementById("dsh-mobile-drawer-mask");' +
+        'if(m&&!m.__dshCloseTap){m.__dshCloseTap=true;' +
+        'm.addEventListener("click",function(){document.body.classList.remove("dsh-user-drawer");},true);}' +
+        'return "open";}catch(e){return "ERR:"+e.message;}})()'
+      : '(function(){try{document.body.classList.remove("dsh-user-drawer");' +
+        'return "closed";}catch(e){return "ERR";}})()';
+    this.controller.runJavaScript(js)
       .then((r: string) => { hilog.info(0x0000, TAG, 'sessions %{public}s', r); })
       .catch(() => {});
+  }
+
+  /** Leave the chat view: collapse the drawer state before returning to setup. */
+  private backToSetup(): void {
+    this.sessionsOpen = false;
+    this.loading = false;
+    this.lastInjectedUrl = '';
+    this.url = '';
   }
   /** Mirror upstream drawer state into our opt-in class so the panel may render. */
   private mirrorDrawer(): void {
@@ -380,7 +394,7 @@ struct Index {
       // Slim opaque bar instead of a floating translucent pill: the pill sat on
       // top of the dsh UI and read as a permanent overlay ("蒙层").
       Row() {
-        Button('Sessions')
+        Button(this.sessionsOpen ? 'Close' : 'Sessions')
           .fontSize(11).height(28).padding({ left: 10, right: 10 })
           .backgroundColor('#EBECEF').fontColor('#182431')
           .onClick(() => this.toggleSessions())
@@ -388,15 +402,13 @@ struct Index {
         Button('Setup')
           .fontSize(11).height(28).padding({ left: 12, right: 12 })
           .backgroundColor('#EBECEF').fontColor('#182431')
-          .onClick(() => {
-            this.lastInjectedUrl = '';
-            this.url = '';
-          })
+          .onClick(() => this.backToSetup())
       }
       .width('100%').height(34).padding({ left: 12, right: 10 })
 
-      Web({ src: this.url, controller: this.controller })
-        .layoutWeight(1).width('100%')
+      Stack() {
+        Web({ src: this.url, controller: this.controller })
+          .width('100%').height('100%')
         .domStorageAccess(true)
         .javaScriptAccess(true)
         .fileAccess(true)
@@ -405,11 +417,13 @@ struct Index {
         // so resize the layout viewport instead of overlaying it.
         .keyboardAvoidMode(WebKeyboardAvoidMode.RESIZE_CONTENT)
         .onPageBegin(() => {
+          this.loading = true;
           if (this.early.length > 0) {
             this.controller.runJavaScript(this.early).catch(() => {});
           }
         })
         .onPageEnd((e: OnPageEndEvent) => {
+          this.loading = false;
           this.injectOnce(e.url);
         })
         .onHttpErrorReceive((e: OnHttpErrorReceiveEvent) => {
@@ -418,6 +432,17 @@ struct Index {
             this.handleHttpError(e.request.getRequestUrl());
           }
         })
+        if (this.loading) {
+          Column({ space: 12 }) {
+            LoadingProgress().width(52).height(52).color('#0A59F7')
+            Text('Connecting...').fontSize(13).fontColor('#666666')
+          }
+          .width('100%').height('100%')
+          .justifyContent(FlexAlign.Center)
+          .backgroundColor('#F5F5F7')
+        }
+      }
+      .layoutWeight(1).width('100%')
     }
     .width('100%').height('100%')
   }
