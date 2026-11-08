@@ -83,11 +83,10 @@ struct Index {
     // inject.js re-add it on every mutation (measured: open/close/open every
     // ~500ms). Instead pin the visuals: never show the drawer or scrim unless we
     // explicitly opt in with body.dsh-user-drawer.
-    const overrides = 'div[class*="_sidebarCol"]{display:none!important}' +
+    const overrides = 'body:not(.dsh-user-drawer) div[class*="_sidebarCol"]{display:none!important}' +
       '#dsh-mobile-drawer-mask{display:none!important}' +
-      'body.dsh-user-drawer div[class*="_sidebarCol"]{display:flex!important;position:fixed!important;' +
-      'left:0;top:0;bottom:0;width:82vw!important;max-width:82vw!important;z-index:2147483600!important;' +
-      'box-shadow:0 0 24px rgba(0,0,0,.28)!important;overflow:auto!important;background:#fff!important}';
+      'body.dsh-user-drawer div[class*="_sidebarCol"]{z-index:2147483600!important;' +
+      'box-shadow:0 0 24px rgba(0,0,0,.25)!important;background:#fff!important}';
     return '(function(){var id="dsh-mobile-css";var old=document.getElementById(id);if(old){old.remove();}' +
       'var s=document.createElement("style");s.id=id;s.textContent=' + JSON.stringify(this.css) + ';' +
       '(document.head||document.documentElement).appendChild(s);' +
@@ -162,30 +161,84 @@ struct Index {
   }
 
   /**
-   * No class fighting: the sidebar column and its scrim are pinned by the CSS
-   * overrides in styleScript(). dsh expands the sidebar on first paint at phone
-   * widths, and upstream inject.js mirrors that into a drawer; removing the class
-   * made it re-add on every mutation (measured open/close/open every ~500ms), so
-   * we keep the state stable and only reveal the drawer on explicit request.
+   * dsh expands the sidebar on first paint, so upstream inject.js arms its drawer
+   * and the scrim shows by itself. Deleting the class made inject.js re-add it on
+   * every mutation (measured open/close flipping every ~500ms), so instead drive
+   * upstream's own close path once: clicking the scrim runs its collapse animation
+   * and leaves dsh genuinely collapsed. Afterwards mirror later open/close into our
+   * own opt-in class, which is what the styleScript overrides key on.
    */
   private settle(): void {
     setTimeout(() => {
       this.controller.runJavaScript(
-        '(function(){try{var m=document.getElementById("dsh-mobile-drawer-mask");' +
-        'if(m){m.style.display="none";}document.body.classList.remove("dsh-user-drawer");' +
-        'return "ok";}catch(e){return "ERR";}})()')
-        .then((r: string) => { hilog.info(0x0000, TAG, 'settle %{public}s', r); })
+        '(function(){try{var b=document.body;' +
+        'if(b.classList.contains("dsh-mobile-drawer")){' +
+        'var t=document.querySelector("button[class*=_toggle]")||' +
+        'document.querySelector("button[aria-label*=收起]")||' +
+        'document.querySelector("button[aria-label*=Collapse]");' +
+        'if(t){t.click();}else{var m=document.getElementById("dsh-mobile-drawer-mask");if(m){m.click();}}}' +
+        'b.classList.remove("dsh-user-drawer");return "closed";' +
+        '}catch(e){return "ERR:"+e.message;}})()')
+        .then((r: string) => { hilog.info(0x0000, TAG, 'settle %{public}s', r); this.mirrorDrawer(); })
         .catch(() => {});
-    }, 1200);
+    }, 2200);
   }
 
-  /** Reveal/hide the sessions drawer on demand (our own opt-in class). */
+  /**
+   * Open/close the sessions drawer ourselves.
+   * Verified on device: adding body.dsh-user-drawer lifts our CSS hold, and then
+   * dsh's own "open sidebar" control gives the column a real 311x699 box; the scrim
+   * dsh renders closes it again, and we drop our class on that tap.
+   */
   private toggleSessions(): void {
     this.controller.runJavaScript(
-      '(function(){try{document.body.classList.toggle("dsh-user-drawer");' +
-      'return document.body.classList.contains("dsh-user-drawer")?"open":"closed";' +
-      '}catch(e){return "ERR";}})()')
+      '(function(){try{var b=document.body;' +
+      'if(b.classList.contains("dsh-user-drawer")){b.classList.remove("dsh-user-drawer");return "closed";}' +
+      'var col=document.querySelector("div[class*=_sidebarCol]");' +
+      'b.classList.add("dsh-user-drawer");' +
+      'var w=col?col.getBoundingClientRect().width:0;' +
+      'if(w<60){var t=document.querySelector("button[aria-label*=打开]")||' +
+      'document.querySelector("button[class*=_toggle]");if(t){t.click();}}' +
+      'var m=document.getElementById("dsh-mobile-drawer-mask");' +
+      'if(m&&!m.__dshCloseTap){m.__dshCloseTap=true;' +
+      'm.addEventListener("click",function(){document.body.classList.remove("dsh-user-drawer");},true);}' +
+      'return "open w="+Math.round(w);}catch(e){return "ERR:"+e.message;}})()')
       .then((r: string) => { hilog.info(0x0000, TAG, 'sessions %{public}s', r); })
+      .catch(() => {});
+  }
+  /** Mirror upstream drawer state into our opt-in class so the panel may render. */
+  private mirrorDrawer(): void {
+    this.controller.runJavaScript(
+      '(function(){try{if(window.__dshMirror){return "on";}window.__dshMirror=true;' +
+      'var prev=document.body.classList.contains("dsh-mobile-drawer");' +
+      'new MutationObserver(function(){' +
+      'var cur=document.body.classList.contains("dsh-mobile-drawer");' +
+      'if(cur===prev)return;prev=cur;' +
+      'if(cur){document.body.classList.add("dsh-user-drawer");}' +
+      'else{document.body.classList.remove("dsh-user-drawer");}' +
+      '}).observe(document.body,{attributes:true,attributeFilter:["class"]});' +
+      'return "mirror";}catch(e){return "ERR";}})()')
+      .then((r: string) => { hilog.info(0x0000, TAG, 'mirror %{public}s', r); })
+      .catch(() => {});
+  }
+  /** Debug only: reveal our drawer class, click dsh's open-sidebar control, report ancestors. */
+  private probeToggle(): void {
+    this.controller.runJavaScript(
+      '(function(){try{var b=document.body;b.classList.add("dsh-user-drawer");' +
+      'var t=document.querySelector("button[aria-label*=打开]")||document.querySelector("button[class*=_toggle]");' +
+      'if(t){t.click();}' +
+      'setTimeout(function(){try{var col=document.querySelector("div[class*=_sidebarCol]");var out=[];' +
+      'if(col){var n=col,r=col.getBoundingClientRect();' +
+      'out.push({tag:n.tagName,cls:(n.className||"").slice(0,28),disp:getComputedStyle(n).display,' +
+      'w:Math.round(r.width),h:Math.round(r.height)});' +
+      'for(var i=0;i<3&&n.parentElement;i++){n=n.parentElement;var q=n.getBoundingClientRect();' +
+      'out.push({tag:n.tagName,cls:(n.className||"").slice(0,28),disp:getComputedStyle(n).display,' +
+      'w:Math.round(q.width),h:Math.round(q.height)});}}' +
+      'var m=document.getElementById("dsh-mobile-drawer-mask");' +
+      'console.log("DSHPRB3 "+JSON.stringify({chain:out,mask:m?getComputedStyle(m).display:"-"}));' +
+      '}catch(e){console.log("DSHPRB3 ERR "+e.message);}},1200);' +
+      'return "ok";}catch(e){return "ERR:"+e.message;}})()')
+      .then((r: string) => { hilog.info(0x0000, TAG, 'toggleCand %{public}s', r); })
       .catch(() => {});
   }
 
@@ -229,6 +282,15 @@ struct Index {
       });
   }
 
+  private openGithub(): void {
+    const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    ctx.openLink('https://github.com/cnzht')
+      .catch((e: Error) => {
+        hilog.warn(0x0000, TAG, 'openLink failed: %{public}s', e.message);
+        this.hint = 'Cannot open browser';
+      });
+  }
+
   @Builder
   setupView() {
     Column({ space: 16 }) {
@@ -249,6 +311,14 @@ struct Index {
       }
       Text('Run `dsh web` on a PC/server, then paste the URL it prints.\nThe token is single-use; a server restart issues a new one.')
         .fontSize(12).fontColor('#999999').textAlign(TextAlign.Center).margin({ top: 8 })
+      Row({ space: 8 }) {
+        SymbolGlyph($r('sys.symbol.link')).fontSize(16).fontColor(['#0A59F7'])
+        Text('github.com/cnzht')
+          .fontSize(13).fontColor('#0A59F7')
+          .decoration({ type: TextDecorationType.Underline, color: '#0A59F7' })
+      }
+      .margin({ top: 18 })
+      .onClick(() => this.openGithub())
     }
     .width('100%').height('100%').padding(28).justifyContent(FlexAlign.Center)
     .backgroundColor('#F5F5F7')
@@ -261,6 +331,10 @@ struct Index {
       // top of the dsh UI and read as a permanent overlay ("蒙层").
       Row() {
         Text('DSH Mobile').fontSize(13).fontColor('#666666')
+        Button('Sessions')
+          .fontSize(12).height(30).padding({ left: 12, right: 12 })
+          .backgroundColor('#EBECEF').fontColor('#182431')
+          .onClick(() => this.toggleSessions())
         Blank()
         Button('Setup')
           .fontSize(12).height(30).padding({ left: 14, right: 14 })
