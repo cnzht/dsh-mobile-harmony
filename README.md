@@ -4,6 +4,8 @@
 一个 ArkWeb 壳 + 上游移动端适配层，扫码即可连接局域网或公网上的 `dsh web`。
 
 > 个人实验性项目 · 非官方 · 使用前请阅读 [免责声明](DISCLAIMER.md)
+>
+> 作者：**沛沛0518** · 仓库：[github.com/cnzht/dsh-mobile-harmony](https://github.com/cnzht/dsh-mobile-harmony)
 
 ---
 

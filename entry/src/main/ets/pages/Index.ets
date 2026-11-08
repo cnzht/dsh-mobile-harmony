@@ -434,6 +434,19 @@ struct Index {
       });
   }
 
+  /** About dialog: author, repo, license and disclaimer pointer. */
+  private showAbout(): void {
+    AlertDialog.show({
+      title: 'About DSH Mobile',
+      message: 'HarmonyOS port of deepseek-harness-mobile\n\n'
+        + 'Author: \u6c9b\u6c9b0518\n'
+        + 'Repo: github.com/cnzht/dsh-mobile-harmony\n'
+        + 'License: MIT\n\n'
+        + 'Personal experimental project, not affiliated with DeepSeek or Huawei. Use at your own risk.',
+      confirm: { value: 'OK', action: () => {} }
+    });
+  }
+
   private openGithub(): void {
     const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
     ctx.openLink('https://github.com/cnzht')
@@ -478,8 +491,13 @@ struct Index {
             .fontSize(13).fontColor('#0A59F7')
             .decoration({ type: TextDecorationType.Underline, color: '#0A59F7' })
         }
-        .margin({ top: 6, bottom: 12 })
+        .margin({ top: 6 })
         .onClick(() => this.openGithub())
+        Button('About')
+          .fontSize(12).height(30).padding({ left: 16, right: 16 })
+          .backgroundColor('#EBECEF').fontColor('#182431')
+          .margin({ bottom: 12 })
+          .onClick(() => this.showAbout())
       }
       .width('100%')
       .padding({ left: 24, right: 24, top: 40, bottom: 40 })
@@ -501,6 +519,10 @@ struct Index {
           .backgroundColor('#EBECEF').fontColor('#182431')
           .onClick(() => this.toggleSessions())
         Blank()
+        Button('i')
+          .fontSize(11).height(28).padding({ left: 10, right: 10 })
+          .backgroundColor('#EBECEF').fontColor('#182431')
+          .onClick(() => this.showAbout())
         Button('Setup')
           .fontSize(11).height(28).padding({ left: 12, right: 12 })
           .backgroundColor('#EBECEF').fontColor('#182431')
