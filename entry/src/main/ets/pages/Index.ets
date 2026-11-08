@@ -93,7 +93,7 @@ struct Index {
       'var oid="dsh-mobile-override";var o=document.getElementById(oid);if(o){o.remove();}' +
       'var s2=document.createElement("style");s2.id=oid;s2.textContent=' + JSON.stringify(overrides) + ';' +
       '(document.head||document.documentElement).appendChild(s2);' +
-      'if(!window.__dshOutsideTap){window.__dshOutsideTap=true;' +
+      'if(!window.__dshErrs){window.__dshErrs=[];' +'window.addEventListener("error",function(e){window.__dshErrs.push(String(e.message||"err").slice(0,120));},true);' +'window.addEventListener("unhandledrejection",function(e){window.__dshErrs.push("rej:"+String(e.reason).slice(0,100));});}' +'if(!window.__dshOutsideTap){window.__dshOutsideTap=true;' +
       'document.addEventListener("click",function(ev){' +
       'if(!document.body.classList.contains("dsh-user-drawer"))return;' +
       'var p=document.querySelector("div[class*=_sidebarCol]");' +
@@ -233,24 +233,30 @@ struct Index {
       .then((r: string) => { hilog.info(0x0000, TAG, 'mirror %{public}s', r); })
       .catch(() => {});
   }
-  /** Debug only: reveal our drawer class, click dsh's open-sidebar control, report ancestors. */
-  private probeToggle(): void {
+  /**
+   * Debug: measure the chat page layout (composer, clipping, scroll) so mobile
+   * adaptation problems can be located without guessing.
+   */
+  private auditButtons(): void {
     this.controller.runJavaScript(
-      '(function(){try{var b=document.body;b.classList.add("dsh-user-drawer");' +
-      'var t=document.querySelector("button[aria-label*=打开]")||document.querySelector("button[class*=_toggle]");' +
-      'if(t){t.click();}' +
-      'setTimeout(function(){try{var col=document.querySelector("div[class*=_sidebarCol]");var out=[];' +
-      'if(col){var n=col,r=col.getBoundingClientRect();' +
-      'out.push({tag:n.tagName,cls:(n.className||"").slice(0,28),disp:getComputedStyle(n).display,' +
-      'w:Math.round(r.width),h:Math.round(r.height)});' +
-      'for(var i=0;i<3&&n.parentElement;i++){n=n.parentElement;var q=n.getBoundingClientRect();' +
-      'out.push({tag:n.tagName,cls:(n.className||"").slice(0,28),disp:getComputedStyle(n).display,' +
-      'w:Math.round(q.width),h:Math.round(q.height)});}}' +
-      'var m=document.getElementById("dsh-mobile-drawer-mask");' +
-      'console.log("DSHPRB3 "+JSON.stringify({chain:out,mask:m?getComputedStyle(m).display:"-"}));' +
-      '}catch(e){console.log("DSHPRB3 ERR "+e.message);}},1200);' +
+      '(function(){try{var vw=innerWidth,vh=innerHeight;' +
+      'var out={vw:vw,vh:vh,docH:document.documentElement.scrollHeight,bodyH:document.body.scrollHeight,' +
+      'scrollY:Math.round(scrollY),clipped:[],boxes:{}};' +
+      'var ta=document.querySelector("textarea,[contenteditable=true]");' +
+      'if(ta){var r=ta.getBoundingClientRect();out.boxes.composer={x:Math.round(r.left),y:Math.round(r.top),' +
+      'w:Math.round(r.width),h:Math.round(r.height),bottom:Math.round(r.bottom)};}' +
+      'var all=document.querySelectorAll("body *");var below=0;' +
+      'for(var i=0;i<all.length;i++){var e=all[i];' +
+      'if(!e.clientWidth&&!e.clientHeight)continue;' +
+      'var cs=getComputedStyle(e);' +
+      'if(e.scrollWidth>e.clientWidth+2&&cs.overflowX!=="visible"&&out.clipped.length<6){' +
+      'out.clipped.push({c:(e.className||e.tagName).toString().slice(0,22),sw:e.scrollWidth,cw:e.clientWidth,' +
+      't:(e.innerText||"").replace(/\\s+/g," ").slice(0,24)});}' +
+      'var rr=e.getBoundingClientRect();if(rr.top>vh-4&&rr.height>10)below++;}' +
+      'out.belowViewport=below;' +
+      'console.log("DSHLAYOUT "+JSON.stringify(out));' +
       'return "ok";}catch(e){return "ERR:"+e.message;}})()')
-      .then((r: string) => { hilog.info(0x0000, TAG, 'toggleCand %{public}s', r); })
+      .then((r: string) => { hilog.info(0x0000, TAG, 'layout %{public}s', r); })
       .catch(() => {});
   }
 
@@ -379,6 +385,9 @@ struct Index {
         .javaScriptAccess(true)
         .fileAccess(true)
         .mixedMode(MixedMode.All)
+        // Chat page: the composer must stay visible when the soft keyboard opens,
+        // so resize the layout viewport instead of overlaying it.
+        .keyboardAvoidMode(WebKeyboardAvoidMode.RESIZE_CONTENT)
         .onPageBegin(() => {
           if (this.early.length > 0) {
             this.controller.runJavaScript(this.early).catch(() => {});
