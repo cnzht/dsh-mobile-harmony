@@ -18,7 +18,7 @@ const TAG: string = 'DshMobile';
 @Component
 struct Index {
   private controller: webview.WebviewController = new webview.WebviewController();
-  @State url: string = 'https://gulf-sunglasses-forums-vinyl.trycloudflare.com/?token=M3_gVrDPLtXmFTZHyQ2en57TIMJtdcillHffdgwdbwY';
+  @State url: string = '';
   @State draft: string = '';
   @State error: string = '';
   @State hint: string = '';
