@@ -1,0 +1,11 @@
+﻿# Obfuscation rules for release builds.
+# Keep exported ArkUI entry points and ability names readable for the runtime.
+-enable-property-obfuscation
+-enable-toplevel-obfuscation
+-enable-filename-obfuscation
+-enable-export-obfuscation
+-keep-property-name
+  build
+  bundleName
+  moduleName
+  abilityName
