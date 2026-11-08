@@ -24,6 +24,8 @@ struct Index {
   @State hint: string = '';
   @State loading: boolean = false;
   @State sessionsOpen: boolean = false;
+  @State sessionsList: string[] = [];
+  @State drawerOpen: boolean = false;
   private early: string = '';
   private inject: string = '';
   private css: string = '';
@@ -112,7 +114,7 @@ struct Index {
       'var pnl=document.querySelector("div[class*=_sidebarCol]");' +
       'if(pnl&&pnl.contains(t))return;' +
       'document.body.classList.remove("dsh-user-drawer");},true);}' +
-      '})();'
+      'if(!window.__dshSessionRows){window.__dshSessionRows=function(){' +'var col=document.querySelector("div[class*=_sidebarCol]");if(!col){return [];}' +'var bs=col.querySelectorAll("button"),out=[];var skip=/^(\\u65b0\\u4f1a\\u8bdd|\\u63d2\\u4ef6|\\u81ea\\u52a8\\u5316\\u4efb\\u52a1|\\u66f4\\u591a|\\u8bbe\\u7f6e|\\u641c\\u7d22)$/;' +'for(var i=0;i<bs.length;i++){var b=bs[i];var t=(b.innerText||"").replace(/\\s+/g," ").trim();' +'if(!t||t.length>60)continue;if(skip.test(t))continue;out.push(b);}' +'return out;};' +'window.__dshListSessions=function(){try{var r=window.__dshSessionRows();var t=[];' +'for(var i=0;i<r.length;i++){t.push((r[i].innerText||"").replace(/\\s+/g," ").trim().slice(0,60));}' +'return JSON.stringify(t);}catch(e){return "[]";}};' +'window.__dshClickSession=function(i){try{if(i<0){var c=document.querySelector("div[class*=_sidebarCol]");' +'var nb=c?c.querySelector("button[class*=newSession]"):null;if(nb){nb.click();return "new";}return "none";}' +'var r=window.__dshSessionRows();if(i>=r.length){return "oob";}r[i].click();return "ok";}catch(e){return "ERR";}};' +      '})();'
   }
 
   /**
@@ -183,6 +185,7 @@ struct Index {
         .catch(() => {});
     }, 1500);
     this.settle();
+    setTimeout(() => this.probeSidebar(), 4000);
     setTimeout(() => this.auditButtons(), 5000);
   }
 
@@ -216,34 +219,101 @@ struct Index {
    * dsh's own "open sidebar" control gives the column a real 311x699 box; the scrim
    * dsh renders closes it again, and we drop our class on that tap.
    */
+  /** Open the native sessions drawer: pull titles from dsh, render natively. */
   private toggleSessions(): void {
-    const next: boolean = !this.sessionsOpen;
-    this.sessionsOpen = next;
-    // dsh's control is labelled in the UI language ("打开侧边栏" /
-    // "Open sidebar"), so locate it by label text rather than by class name.
-    // Match the sidebar control specifically: plain "\u6253\u5f00" (open) also appears in
-    // unrelated actions such as "open with file manager", which we must not click.
-    const findToggle =
-      'var cand=document.querySelectorAll("button"),tg=null;' +
-      'for(var i=0;i<cand.length;i++){var a=cand[i].getAttribute("aria-label")||"";' +
-      'var lb=a.toLowerCase();' +
-      'if(a.indexOf("\\u4fa7\\u8fb9\\u680f")>=0||lb.indexOf("sidebar")>=0){' +
-      'var rr=cand[i].getBoundingClientRect();if(rr.width>0&&rr.top<220){tg=cand[i];break;}}}';
-const openJs = '(function(){try{var b=document.body;window.__dshOpenGuard=Date.now();' +
-      'b.classList.add("dsh-user-drawer");' +
-      findToggle +
-      'if(tg){tg.click();}' +
-      'setTimeout(function(){var c2=document.querySelector("div[class*=_sidebarCol]");' +
-      'var w2=c2?c2.getBoundingClientRect().width:0;' +
-      'if(w2<60){' + findToggle + 'if(tg){tg.click();}}' +
-      'document.body.classList.add("dsh-user-drawer");window.__dshOpenGuard=Date.now();},450);' +
-      'setTimeout(function(){try{var b=document.body;' +'var c=document.querySelector("div[class*=_sidebarCol]");' +'var cr=c?c.getBoundingClientRect():null;' +'var fx=document.querySelectorAll("body *"),cov=[];' +'for(var i=0;i<fx.length&&cov.length<5;i++){var e=fx[i];var r=e.getBoundingClientRect();' +'var cs=getComputedStyle(e);' +'if(cs.position!=="fixed")continue;' +'if(r.width*innerHeight<0.45*innerWidth*innerHeight)continue;' +'cov.push((e.className||e.tagName).toString().slice(0,26)+"|z"+cs.zIndex+"|bg"+cs.backgroundColor.slice(0,20));}' +'console.log("DSHSESS "+JSON.stringify({cls:b.className.slice(0,60),' +'sb:c?Math.round(cr.width):-1,cov:cov}));}catch(e){}},1600);' +'return "open found="+(tg?1:0);}catch(e){return "ERR:"+e.message;}})()';
-    const closeJs = '(function(){try{document.body.classList.remove("dsh-user-drawer");' +
-      'return "closed";}catch(e){return "ERR";}})()';
-    this.controller.runJavaScript(next ? openJs : closeJs)
-      .then((r: string) => { hilog.info(0x0000, TAG, 'sessions %{public}s', r); })
-      .catch(() => {});
+    if (this.drawerOpen) {
+      this.drawerOpen = false;
+      return;
+    }
+    this.controller.runJavaScript(
+      '(function(){try{return window.__dshListSessions?window.__dshListSessions():"[]";' +
+      '}catch(e){return "[]";}})()')
+      .then((r: string) => {
+        this.sessionsList = this.toTitleList(r);
+        this.drawerOpen = true;
+      })
+      .catch(() => {
+        this.sessionsList = [];
+        this.drawerOpen = true;
+      });
   }
+
+  /** Robustly turn the injected JSON (or anything else) into a string[] of titles. */
+  private toTitleList(raw: string): string[] {
+    const out: string[] = [];
+    if (raw.length === 0) {
+      return out;
+    }
+    try {
+      const parsed: Object = JSON.parse(raw) as Object;
+      if (Array.isArray(parsed)) {
+        const arr = parsed as string[];
+        for (let i = 0; i < arr.length && out.length < 30; i++) {
+          out.push(String(arr[i]));
+        }
+      }
+    } catch (e) {
+      hilog.warn(0x0000, TAG, 'list parse failed');
+    }
+    return out;
+  }
+
+  private pickSession(i: number): void {
+    this.controller.runJavaScript(
+      '(function(){try{return window.__dshClickSession?window.__dshClickSession(' + i + '):"nodrawer";' +
+      '}catch(e){return "ERR";}})()')
+      .then((r: string) => { hilog.info(0x0000, TAG, 'pick %{public}s', r); })
+      .catch(() => {});
+    this.drawerOpen = false;
+  }
+
+  @Builder
+  sessionsDrawer() {
+    Column() {
+      Row() {
+        Text('Sessions').fontSize(15).fontWeight(FontWeight.Medium)
+        Blank()
+        Button('Close')
+          .fontSize(11).height(26).padding({ left: 10, right: 10 })
+          .backgroundColor('#EBECEF').fontColor('#182431')
+          .onClick(() => { this.drawerOpen = false; })
+      }
+      .width('100%').height(44).padding({ left: 14, right: 10 })
+
+      List({ space: 2 }) {
+        ListItem() {
+          Text('＋ New session').fontSize(14).fontColor('#0A59F7')
+            .width('100%').padding({ left: 14, top: 12, bottom: 12 })
+        }
+        .onClick(() => this.pickSession(-1))
+
+        if (this.sessionsList.length === 0) {
+          ListItem() {
+            Text('No sessions in this workspace').fontSize(12).fontColor('#999999')
+              .width('100%').padding({ left: 14, top: 16, bottom: 16 })
+          }
+        }
+        ForEach(this.sessionsList, (title: string, idx: number) => {
+          ListItem() {
+            Column({ space: 2 }) {
+              Text(title).fontSize(14).maxLines(2)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .width('100%')
+                .padding({ left: 14, right: 12, top: 10, bottom: 10 })
+            }
+            .width('100%')
+          }
+          .onClick(() => this.pickSession(idx))
+        }, (title: string, idx: number) => title + idx.toString())
+      }
+      .layoutWeight(1).width('100%')
+    }
+    .width('82%').height('100%')
+    .backgroundColor('#FFFFFF')
+    .onClick(() => {})
+    .alignItems(HorizontalAlign.Start)
+  }
+
 
   /** Leave the chat view: collapse the drawer state before returning to setup. */
   private backToSetup(): void {
@@ -252,6 +322,23 @@ const openJs = '(function(){try{var b=document.body;window.__dshOpenGuard=Date.n
     this.lastInjectedUrl = '';
     this.url = '';
   }
+  /** Debug: dump the dsh sidebar row structure (data source for the native drawer). */
+  private probeSidebar(): void {
+    this.controller.runJavaScript(
+      '(function(){try{var col=document.querySelector("div[class*=_sidebarCol]");' +
+      'if(!col){return "no sidebar col";}' +
+      'var rows=[],all=col.querySelectorAll("*");' +
+      'for(var i=0;i<all.length&&rows.length<12;i++){var e=all[i];' +
+      'var t=(e.innerText||"").replace(/\s+/g," ").trim();' +
+      'if(t.length<2||t.length>48)continue;' +
+      'var r=e.getBoundingClientRect();' +
+      'rows.push({tag:e.tagName,c:(e.className||"").toString().slice(0,26),' +
+      'role:e.getAttribute("role")||"",h:Math.round(r.height),t:t.slice(0,34)});}' +
+      'return JSON.stringify({n:rows.length,items:rows});}catch(e){return "ERR:"+e.message;}})()')
+      .then((r: string) => { hilog.info(0x0000, TAG, 'sidebar %{public}s', r); })
+      .catch(() => {});
+  }
+
   /** Mirror upstream drawer state into our opt-in class so the panel may render. */
   private mirrorDrawer(): void {
     this.controller.runJavaScript(
@@ -447,6 +534,15 @@ const openJs = '(function(){try{var b=document.body;window.__dshOpenGuard=Date.n
             this.handleHttpError(e.request.getRequestUrl());
           }
         })
+        if (this.drawerOpen) {
+          Row() {
+            this.sessionsDrawer()
+            Blank()
+          }
+          .width('100%').height('100%')
+          .backgroundColor('#33000000')
+          .onClick(() => { this.drawerOpen = false; })
+        }
         if (this.loading) {
           Column({ space: 12 }) {
             LoadingProgress().width(52).height(52).color('#0A59F7')
