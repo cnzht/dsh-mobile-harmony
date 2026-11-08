@@ -26,6 +26,7 @@ struct Index {
   @State sessionsOpen: boolean = false;
   @State sessionsList: string[] = [];
   @State drawerOpen: boolean = false;
+  @State aboutOpen: boolean = false;
   private early: string = '';
   private inject: string = '';
   private css: string = '';
@@ -434,17 +435,34 @@ struct Index {
       });
   }
 
-  /** About dialog: author, repo, license and disclaimer pointer. */
+  /** About: toggled as an ArkUI overlay (AlertDialog is unreliable on some devices). */
   private showAbout(): void {
-    AlertDialog.show({
-      title: 'About DSH Mobile',
-      message: 'HarmonyOS port of deepseek-harness-mobile\n\n'
-        + 'Author: \u6c9b\u6c9b0518\n'
-        + 'Repo: github.com/cnzht/dsh-mobile-harmony\n'
-        + 'License: MIT\n\n'
-        + 'Personal experimental project, not affiliated with DeepSeek or Huawei. Use at your own risk.',
-      confirm: { value: 'OK', action: () => {} }
-    });
+    this.aboutOpen = !this.aboutOpen;
+  }
+
+  @Builder
+  aboutCard() {
+    Column({ space: 8 }) {
+      Text('About DSH Mobile').fontSize(17).fontWeight(FontWeight.Medium)
+      Text('HarmonyOS port of deepseek-harness-mobile')
+        .fontSize(12).fontColor('#666666').textAlign(TextAlign.Center).maxLines(2)
+      Divider().margin({ top: 4, bottom: 4 })
+      Text('Author: \u6c9b\u6c9b0518').fontSize(14)
+      Text('Repo: github.com/cnzht/dsh-mobile-harmony').fontSize(13).fontColor('#0A59F7')
+        .onClick(() => this.openGithub())
+      Text('License: MIT').fontSize(13).fontColor('#666666')
+      Text('Personal experimental project, not affiliated with DeepSeek or Huawei. Use at your own risk.')
+        .fontSize(11).fontColor('#999999').textAlign(TextAlign.Center).maxLines(4)
+      Button('OK')
+        .fontSize(13).height(38).width('100%').margin({ top: 8 })
+        .backgroundColor('#0A59F7')
+        .onClick(() => { this.aboutOpen = false; })
+    }
+    .width('86%')
+    .padding(20)
+    .borderRadius(16)
+    .backgroundColor('#FFFFFF')
+    .alignItems(HorizontalAlign.Start)
   }
 
   private openGithub(): void {
@@ -556,6 +574,15 @@ struct Index {
             this.handleHttpError(e.request.getRequestUrl());
           }
         })
+        if (this.aboutOpen) {
+          Column() {
+            this.aboutCard()
+          }
+          .width('100%').height('100%')
+          .justifyContent(FlexAlign.Center)
+          .backgroundColor('#66000000')
+          .onClick(() => { this.aboutOpen = false; })
+        }
         if (this.drawerOpen) {
           Row() {
             this.sessionsDrawer()
@@ -581,11 +608,24 @@ struct Index {
   }
 
   build() {
-    Column() {
-      if (this.url.length === 0) {
-        this.setupView()
-      } else {
-        this.webView()
+    Stack() {
+      Column() {
+        if (this.url.length === 0) {
+          this.setupView()
+        } else {
+          this.webView()
+        }
+      }
+      .width('100%').height('100%')
+
+      if (this.aboutOpen) {
+        Column() {
+          this.aboutCard()
+        }
+        .width('100%').height('100%')
+        .justifyContent(FlexAlign.Center)
+        .backgroundColor('#66000000')
+        .onClick(() => { this.aboutOpen = false; })
       }
     }
     .width('100%').height('100%')
