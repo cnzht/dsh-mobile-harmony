@@ -8,6 +8,11 @@
   // 老 WebView（Chrome < 116，Android 12 及以下的系统 WebView 常见）
   // 没有 AbortSignal.any/timeout，dsh 的工作区选择器等会直接抛
   // "AbortSignal.any is not a function"（issue #2/#4）。补最小实现。
+  // 注意：这段与 early-polyfill.js 里的同名补丁是刻意重复，不是漏删——
+  // early-polyfill 在 onPageBegin 注入，inject.js 在 onPageEnd 注入；
+  // 若前者因页面跳转漏跑，后者仍能兜底。两者都以
+  // `typeof AbortSignal.any !== 'function'` 为守卫，先跑的生效、后跑的
+  // 不覆盖，行为一致；改一处就要改另一处，tests 里有文本一致性检查。
   if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.any !== 'function') {
     AbortSignal.any = function (signals) {
       var ctrl = new AbortController();
@@ -37,7 +42,13 @@
   function ensureViewport() {
     var v = document.querySelector('meta[name=viewport]');
     var want = 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content';
-    if (v && v.getAttribute('content') !== want) {
+    if (!v) {
+      // 没有 viewport meta 时只改内容是没用的：建一个，否则页面仍按桌面宽度排版。
+      v = document.createElement('meta');
+      v.setAttribute('name', 'viewport');
+      v.setAttribute('content', want);
+      (document.head || document.documentElement).appendChild(v);
+    } else if (v.getAttribute('content') !== want) {
       v.setAttribute('content', want);
     }
   }

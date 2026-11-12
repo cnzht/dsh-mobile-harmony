@@ -18,3 +18,7 @@ Thumbs.db
 *.log
 entry/.preview/
 **/.preview/
+
+# Local build config: registered developer name for the About card.
+# Never committed; copy developer.json.example and fill it in.
+entry/src/main/resources/rawfile/developer.json

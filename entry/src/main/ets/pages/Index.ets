@@ -7,12 +7,27 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 
 const TAG: string = 'DshMobile';
 
+/**
+ * Local build config (entry/src/main/resources/rawfile/developer.json).
+ * The file is gitignored and never committed: it carries the developer
+ * name as registered in the developer center, which the About card must
+ * show for the store review but which must not appear in the public repo.
+ * See developer.json.example for the format.
+ */
+interface DeveloperConfig {
+  developerName?: string;
+}
+
+/** Privacy policy / user agreement pages (GitHub Pages; enable Pages for the repo or the links 404). */
+const PRIVACY_URL: string = 'https://cnzht.github.io/dsh-mobile-harmony/privacy.html';
+const EULA_URL: string = 'https://cnzht.github.io/dsh-mobile-harmony/eula.html';
+
 /*
- * HarmonyOS port of deepseek-harness-mobile.
+ * HarmonyOS client for a self-hosted Harness service.
  * Upstream runs `dsh web` inside a proot Ubuntu container on the phone.
  * HarmonyOS has no proot/root container, so this port keeps what matters:
  * the mobile adaptation layer (early-polyfill.js / inject.js / mobile.css)
- * injected into a dsh web UI served by a host on the LAN.
+ * injected into the service web UI served by a host on the LAN.
  */
 @Entry
 @Component
@@ -23,10 +38,15 @@ struct Index {
   @State error: string = '';
   @State hint: string = '';
   @State loading: boolean = false;
-  @State sessionsOpen: boolean = false;
   @State sessionsList: string[] = [];
   @State drawerOpen: boolean = false;
   @State aboutOpen: boolean = false;
+  /** First-launch privacy consent dialog (AGC review §7.5). */
+  @State privacyOpen: boolean = false;
+  /** User tapped "不同意" / "暂不使用": show the consent banner until they agree. */
+  @State privacyDeclined: boolean = false;
+  /** Developer display name, read from the local gitignored developer.json. */
+  @State developerName: string = '';
   private early: string = '';
   private inject: string = '';
   private css: string = '';
@@ -49,6 +69,22 @@ struct Index {
     } catch (e) {
       hilog.error(0x0000, TAG, 'read rawfile failed: %{public}s', JSON.stringify(e));
     }
+
+    // Developer name is a separate try/catch on purpose: the config file is
+    // local-only (see developer.json.example), so a missing file must never
+    // block the three assets above — the About card then shows a bare label.
+    try {
+      const rm = this.getUIContext().getHostContext()!.resourceManager;
+      const decoder = util.TextDecoder.create('utf-8');
+      const raw = decoder.decodeToString(rm.getRawFileContentSync('developer.json'));
+      const cfg = JSON.parse(raw) as DeveloperConfig;
+      const name: string | undefined = cfg.developerName;
+      if (typeof name === 'string' && name.length > 0) {
+        this.developerName = name;
+      }
+    } catch (e) {
+      hilog.warn(0x0000, TAG, 'developer.json unavailable: %{public}s', JSON.stringify(e));
+    }
   }
 
   private loadPrefs(): void {
@@ -59,10 +95,36 @@ struct Index {
         if (saved.length > 0) {
           this.draft = saved;
         }
+        // First launch: ask the user to read the privacy policy before use.
+        // The choice is remembered in preferences; a missing flag means "not yet agreed".
+        const accepted = p.getSync('privacyAccepted', false) as boolean;
+        if (!accepted) {
+          this.privacyOpen = true;
+        }
       })
       .catch((e: Error) => {
         hilog.warn(0x0000, TAG, 'prefs unavailable: %{public}s', e.message);
       });
+  }
+
+  /** First-launch privacy consent: record agreement and close the dialog. */
+  private acceptPrivacy(): void {
+    this.privacyOpen = false;
+    this.privacyDeclined = false;
+    if (this.prefs !== undefined) {
+      this.prefs.putSync('privacyAccepted', true);
+      this.prefs.flush();
+    }
+  }
+
+  /** "不同意": keep the dialog open and show that consent is required to use the app. */
+  private declinePrivacy(): void {
+    this.privacyDeclined = true;
+  }
+
+  /** "暂不使用": close the dialog; setupView keeps a banner that reopens it. */
+  private openPrivacyLater(): void {
+    this.privacyOpen = false;
   }
 
   private connect(): void {
@@ -318,7 +380,8 @@ struct Index {
 
   /** Leave the chat view: collapse the drawer state before returning to setup. */
   private backToSetup(): void {
-    this.sessionsOpen = false;
+    this.drawerOpen = false;
+    this.sessionsList = [];
     this.loading = false;
     this.lastInjectedUrl = '';
     this.url = '';
@@ -443,15 +506,15 @@ struct Index {
   @Builder
   aboutCard() {
     Column({ space: 8 }) {
-      Text('About DSH Mobile').fontSize(17).fontWeight(FontWeight.Medium)
-      Text('HarmonyOS port of deepseek-harness-mobile')
+      Text('About Harness Mobile').fontSize(17).fontWeight(FontWeight.Medium)
+      Text('HarmonyOS client for your own Harness service')
         .fontSize(12).fontColor('#666666').textAlign(TextAlign.Center).maxLines(2)
       Divider().margin({ top: 4, bottom: 4 })
-      Text('Author: \u6c9b\u6c9b0518').fontSize(14)
+      Text(this.developerName.length > 0 ? 'Developer: ' + this.developerName : 'Developer').fontSize(14)
       Text('Repo: github.com/cnzht/dsh-mobile-harmony').fontSize(13).fontColor('#0A59F7')
         .onClick(() => this.openGithub())
       Text('License: MIT').fontSize(13).fontColor('#666666')
-      Text('Personal experimental project, not affiliated with DeepSeek or Huawei. Use at your own risk.')
+      Text('会话内容由你自部署的服务生成，本应用仅负责展示，不提供 AI 生成服务。')
         .fontSize(11).fontColor('#999999').textAlign(TextAlign.Center).maxLines(4)
       Button('OK')
         .fontSize(13).height(38).width('100%').margin({ top: 8 })
@@ -465,13 +528,58 @@ struct Index {
     .alignItems(HorizontalAlign.Start)
   }
 
-  private openGithub(): void {
+  /** First-launch privacy consent (AGC review §7.5): same root-overlay pattern as About. */
+  @Builder
+  privacyCard() {
+    Column({ space: 10 }) {
+      Text('隐私政策').fontSize(17).fontWeight(FontWeight.Medium)
+      Text('使用 Harness Mobile 前，请阅读隐私政策与用户协议。')
+        .fontSize(13).fontColor('#333333').maxLines(3)
+      Text('本应用不收集任何个人信息。服务器地址与访问令牌仅保存在设备本地，仅用于连接你指定的服务器；会话内容只在你与你的服务器之间传输。')
+        .fontSize(12).fontColor('#666666').maxLines(6)
+      Row({ space: 16 }) {
+        Text('隐私政策').fontSize(13).fontColor('#0A59F7')
+          .decoration({ type: TextDecorationType.Underline, color: '#0A59F7' })
+          .onClick(() => this.openUrl(PRIVACY_URL))
+        Text('用户协议').fontSize(13).fontColor('#0A59F7')
+          .decoration({ type: TextDecorationType.Underline, color: '#0A59F7' })
+          .onClick(() => this.openUrl(EULA_URL))
+      }
+      if (this.privacyDeclined) {
+        Text('需要同意隐私政策才能使用本应用。')
+          .fontSize(12).fontColor('#E84026').maxLines(2)
+      }
+      Button('同意').fontSize(13).height(38).width('100%').margin({ top: 4 })
+        .backgroundColor('#0A59F7')
+        .onClick(() => this.acceptPrivacy())
+      Row({ space: 12 }) {
+        Button('不同意').fontSize(12).height(32).layoutWeight(1)
+          .backgroundColor('#EBECEF').fontColor('#182431')
+          .onClick(() => this.declinePrivacy())
+        Button('暂不使用').fontSize(12).height(32).layoutWeight(1)
+          .backgroundColor('#EBECEF').fontColor('#182431')
+          .onClick(() => this.openPrivacyLater())
+      }
+      .width('100%')
+    }
+    .width('86%')
+    .padding(20)
+    .borderRadius(16)
+    .backgroundColor('#FFFFFF')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  private openUrl(url: string): void {
     const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
-    ctx.openLink('https://github.com/cnzht')
+    ctx.openLink(url)
       .catch((e: Error) => {
         hilog.warn(0x0000, TAG, 'openLink failed: %{public}s', e.message);
         this.hint = 'Cannot open browser';
       });
+  }
+
+  private openGithub(): void {
+    this.openUrl('https://github.com/cnzht');
   }
 
   @Builder
@@ -480,8 +588,8 @@ struct Index {
     // whenever the content was taller than the viewport.
     Scroll() {
       Column({ space: 14 }) {
-        Text('DSH Mobile').fontSize(32).fontWeight(FontWeight.Bold)
-        Text('HarmonyOS port · connect to a dsh web host')
+        Text('Harness Mobile').fontSize(32).fontWeight(FontWeight.Bold)
+        Text('HarmonyOS client · connect to your own Harness host')
           .fontSize(13).fontColor('#666666').textAlign(TextAlign.Center)
           .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
           .width('100%')
@@ -500,6 +608,15 @@ struct Index {
           Text(this.error).fontSize(13).fontColor('#E84026')
             .textAlign(TextAlign.Center).width('100%').maxLines(2)
         }
+        if (this.privacyDeclined) {
+          Row({ space: 8 }) {
+            Text('使用前请先阅读并同意隐私政策。').fontSize(12).fontColor('#E84026').layoutWeight(1)
+            Button('查看').fontSize(12).height(28).padding({ left: 12, right: 12 })
+              .backgroundColor('#0A59F7')
+              .onClick(() => { this.privacyOpen = true; })
+          }
+          .width('100%')
+        }
         Text('Run `dsh web` on a PC/server, then paste the URL it prints. The token is single-use.')
           .fontSize(12).fontColor('#999999').textAlign(TextAlign.Center)
           .width('100%').maxLines(4)
@@ -511,6 +628,15 @@ struct Index {
         }
         .margin({ top: 6 })
         .onClick(() => this.openGithub())
+        Row({ space: 16 }) {
+          Text('隐私政策').fontSize(12).fontColor('#0A59F7')
+            .decoration({ type: TextDecorationType.Underline, color: '#0A59F7' })
+            .onClick(() => this.openUrl(PRIVACY_URL))
+          Text('用户协议').fontSize(12).fontColor('#0A59F7')
+            .decoration({ type: TextDecorationType.Underline, color: '#0A59F7' })
+            .onClick(() => this.openUrl(EULA_URL))
+        }
+        .margin({ top: 2 })
         Button('About')
           .fontSize(12).height(30).padding({ left: 16, right: 16 })
           .backgroundColor('#EBECEF').fontColor('#182431')
@@ -532,10 +658,17 @@ struct Index {
       // Slim opaque bar instead of a floating translucent pill: the pill sat on
       // top of the dsh UI and read as a permanent overlay ("蒙层").
       Row() {
-        Button(this.sessionsOpen ? 'Close' : 'Sessions')
+        Button(this.drawerOpen ? 'Close' : 'Sessions')
           .fontSize(11).height(28).padding({ left: 10, right: 10 })
           .backgroundColor('#EBECEF').fontColor('#182431')
           .onClick(() => this.toggleSessions())
+        // Explicit AI-generated-content label (AGC review): the chat content in
+        // the WebView is generated by the user's own deployed service; this app
+        // only renders it and provides no AI generation itself.
+        Text('AI 生成内容')
+          .fontSize(10).fontColor('#B25E00')
+          .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+          .backgroundColor('#FFF4E0').borderRadius(4)
         Blank()
         Button('i')
           .fontSize(11).height(28).padding({ left: 10, right: 10 })
@@ -626,6 +759,17 @@ struct Index {
         .justifyContent(FlexAlign.Center)
         .backgroundColor('#66000000')
         .onClick(() => { this.aboutOpen = false; })
+      }
+
+      // First-launch privacy consent: no tap-outside dismiss — the user must
+      // pick 同意 / 不同意 / 暂不使用 explicitly.
+      if (this.privacyOpen) {
+        Column() {
+          this.privacyCard()
+        }
+        .width('100%').height('100%')
+        .justifyContent(FlexAlign.Center)
+        .backgroundColor('#66000000')
       }
     }
     .width('100%').height('100%')

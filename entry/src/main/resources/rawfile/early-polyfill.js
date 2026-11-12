@@ -2,7 +2,10 @@
    （onPageStarted）。只放无 DOM 依赖的最小补丁。
    背景：Android 12 及以下常见系统 WebView（Chrome < 116）没有
    AbortSignal.any/timeout，dsh 工作区选择器等会抛
-   "AbortSignal.any is not a function"（issue #2/#4）。 */
+   "AbortSignal.any is not a function"（issue #2/#4）。
+   注意：AbortSignal.any/timeout 两段与 inject.js 里是刻意重复
+   （early 在 onPageBegin、inject 在 onPageEnd；前者漏跑时后者兜底），
+   改一处就要改另一处，tests 里有文本一致性检查。 */
 (function () {
   'use strict';
   if (window.__dshEarlyPolyfill) return;
@@ -43,6 +46,7 @@
   if (!Array.prototype.findLast) {
     Array.prototype.findLast = function (fn, thisArg) {
       for (var i = this.length - 1; i >= 0; i--) {
+        if (!(i in this)) continue;
         if (fn.call(thisArg, this[i], i, this)) return this[i];
       }
       return undefined;
@@ -51,6 +55,7 @@
   if (!Array.prototype.findLastIndex) {
     Array.prototype.findLastIndex = function (fn, thisArg) {
       for (var i = this.length - 1; i >= 0; i--) {
+        if (!(i in this)) continue;
         if (fn.call(thisArg, this[i], i, this)) return i;
       }
       return -1;
@@ -62,15 +67,20 @@
     };
   }
   if (!Array.prototype.toSpliced) {
-    Array.prototype.toSpliced = function (start, deleteCount) {
+    Array.prototype.toSpliced = function () {
+      // Pass arguments through untouched: splice() itself handles a missing
+      // deleteCount (delete to the end). Passing [start, undefined] would
+      // instead delete nothing, so toSpliced(1) used to return a full copy.
       var copy = this.slice();
-      copy.splice.apply(copy, [start, deleteCount].concat(Array.prototype.slice.call(arguments, 2)));
+      copy.splice.apply(copy, arguments);
       return copy;
     };
   }
   if (typeof Object.groupBy !== 'function') {
     Object.groupBy = function (items, fn) {
-      var out = {};
+      // Null-prototype target: a "__proto__" key must be a real group, not
+      // silently become the object's prototype (and drop out of JSON).
+      var out = Object.create(null);
       for (var i = 0; i < items.length; i++) {
         var k = fn(items[i], i);
         if (!Object.prototype.hasOwnProperty.call(out, k)) out[k] = [];

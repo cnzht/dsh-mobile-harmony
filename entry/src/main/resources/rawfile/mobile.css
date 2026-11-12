@@ -1,5 +1,5 @@
 /* ============================================================
-   dsh-mobile 移动端适配样式（注入到 DeepSeek Harness Web UI）
+   dsh-mobile 移动端适配样式（注入到 Harness 服务的 Web 界面）
    目标：390px 左右手机竖屏，触控友好，无横向溢出。
    基于 dsh 0.1.5 实际 DOM 结构编写：
      框架  [class*="_frame"] = sidebarCol | centerCol | rightbarCol
