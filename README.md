@@ -1,10 +1,10 @@
-# DSH Mobile · HarmonyOS
+# Harness Mobile · HarmonyOS
 
-DeepSeek Harness 的鸿蒙移动客户端：一个 ArkWeb 外壳 + 上游移动端适配层，
+开源 AI 编码助手 Harness 的移动客户端：一个 ArkWeb 外壳 + 上游移动端适配层，
 **扫码即可连接**你在电脑或服务器上部署的 `dsh web`，在手机上继续工作区、会话与任务。
 
-> 作者：**沛沛0518** · 仓库：[github.com/cnzht/dsh-mobile-harmony](https://github.com/cnzht/dsh-mobile-harmony)
-> 个人实验性项目 · 非官方 · 使用前请阅读 [免责声明](DISCLAIMER.md)
+> 开发者：以开发者中心登记为准 · 仓库：[github.com/cnzht/dsh-mobile-harmony](https://github.com/cnzht/dsh-mobile-harmony)
+> 开源项目（MIT） · 使用前请阅读 [免责声明](DISCLAIMER.md)
 
 ![首页](docs/store/store-1-ui-icon-home.png)
 ![连接成功](docs/store/store-2-real-shots_real-1-connected.png)
@@ -21,7 +21,7 @@ DeepSeek Harness 的鸿蒙移动客户端：一个 ArkWeb 外壳 + 上游移动�
 | **键盘避让** | `WebKeyboardAvoidMode.RESIZE_CONTENT`，软键盘不再遮挡输入框 |
 | **移动端适配** | 内置上游 `early-polyfill.js` / `inject.js` / `mobile.css`，弹窗单列化、触控目标加大等 |
 | **地址持久化** | `@ohos.data.preferences` 记住上次服务器，免重复输入 |
-| **关于/来源** | `About` 展示作者、仓库、许可与免责声明入口 |
+| **关于/来源** | `About` 展示开发者、仓库、许可与免责声明入口 |
 | **仅一个权限** | 只申请 `ohos.permission.INTERNET`（已移除未使用的 `GET_NETWORK_INFO`） |
 
 ## 环境要求
@@ -31,7 +31,7 @@ DeepSeek Harness 的鸿蒙移动客户端：一个 ArkWeb 外壳 + 上游移动�
 | DevEco Studio | 26.0.0 |
 | HarmonyOS SDK | 26.0.0 Release / **API 26** |
 | 设备 | HUAWEI Mate 90（HarmonyOS 7.0.0.130）或 API 26 模拟器 |
-| 宿主机服务 | 任一能运行 `dsh web` 的 DeepSeek Harness |
+| 宿主机服务 | 任一能运行 `dsh web` 的 Harness 服务 |
 
 ## 快速开始
 
@@ -60,6 +60,10 @@ set HDC=%DEVECO_HOME%\sdk\default\openharmony\toolchains\hdc.exe
 > 首次在你自己的机器上构建，需要在 DevEco 里
 > `File > Project Structure > Signing Configs` 勾选 `Automatically generate signature`。
 
+> 构建提审包之前，先在构建机上按 `entry/src/main/resources/rawfile/developer.json.example`
+> 创建本地的 `developer.json`，填入开发者中心登记的真实姓名（该文件已加入
+> .gitignore，绝不提交）。没有这个文件时 About 里不显示开发者名，审核第 1 条会再被拒。
+
 ## 架构
 
 ```
@@ -72,8 +76,8 @@ ArkWeb(WebView)
   `dsh web`（运行在你自己的电脑或服务器）
 ```
 
-上游 [deepseek-harness-mobile](https://github.com/Ajwyunsx/deepseek-harness-mobile) 是
-*proot 容器 + `dsh web` + WebView*；鸿蒙没有 root 容器、也无法在手机上跑 Node，
+上游移动端适配层（第三方归属见 [NOTICE.md](NOTICE.md)）是
+*proot 容器 + `dsh web` + WebView*；HarmonyOS 没有 root 容器、也无法在手机上跑 Node，
 因此本移植保留**移动端适配层**，把"本地跑服务"改为"连远端服务"。
 
 ## 发布与上架
@@ -81,7 +85,7 @@ ArkWeb(WebView)
 | 项 | 当前值 |
 |---|---|
 | 包名 | `cn.cnzht.dshmobile` |
-| 版本 | `1.0.0 (versionCode 1000000)` |
+| 版本 | `1.0.1 (versionCode 1000001)` |
 | 发布签名 | AGC 发布证书（ECC secp384r1 / SHA384withECDSA） |
 | 上架包 | `dist/dsh-mobile-release-signed.app`（约 102 KB） |
 

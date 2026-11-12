@@ -6,7 +6,7 @@
 
 ## 简体中文
 
-本项目（`dsh-mobile-harmony`，以下简称"本项目"）是一个**个人实验性项目**，用于在 HarmonyOS 设备上访问 DeepSeek Harness（dsh）的 Web 界面。**请在使用前完整阅读本声明。**
+本项目（`dsh-mobile-harmony`，以下简称"本项目"）是一个**个人开源项目**，用于在 HarmonyOS 设备上访问 Harness（dsh）的 Web 界面。**请在使用前完整阅读本声明。**
 
 ### 1. 无担保
 
@@ -20,7 +20,7 @@
 - **设备风险**：HarmonyOS 平台上的 WebView 注入、扫码、网络访问等能力可能因系统版本差异产生未知行为，极端情况下可能导致应用崩溃或系统异常。
 - **账号与凭据风险**：若你将访问令牌（token）、Cookie 或华为开发者证书置于不安全的环境，可能造成凭据泄露与账号被滥用。
 - **网络暴露风险**：本项目提供的公网访问方案（Cloudflare Quick Tunnel 等）会把服务暴露到互联网。其域名随机、默认无额外鉴权，仅依靠一次性 token 防护。**请勿长期开启，务必在调试结束后关闭隧道进程。**
-- **合规风险**：你需要自行确保使用时遵守所在国家/地区的法律法规、网络服务商条款以及 DeepSeek Harness 的使用条款。
+- **合规风险**：你需要自行确保使用时遵守所在国家/地区的法律法规、网络服务商条款以及 Harness 服务的使用条款。
 
 ### 3. 责任限制
 
@@ -28,13 +28,11 @@
 
 ### 4. 非官方声明
 
-本项目是**非官方、非商业**的第三方社区项目，与 DeepSeek、华为技术有限公司均**无隶属、合作或背书关系**。文中提及的 "DeepSeek"、"DeepSeek Harness"、"HarmonyOS"、"DevEco Studio"、"HUAWEI"、"Cloudflare" 等名称、商标与图标均归其各自权利人所有，本项目仅为描述性引用。
+本项目是**非官方、非商业**的第三方社区项目，与华为技术有限公司**无隶属、合作或背书关系**。文中提及的 "HarmonyOS"、"DevEco Studio"、"HUAWEI"、"Cloudflare" 等名称、商标与图标均归其各自权利人所有，本项目仅为描述性引用。
 
 ### 5. 上游项目与第三方内容
 
-本项目的移动端适配层（`entry/src/main/resources/rawfile/` 下的 `early-polyfill.js`、`inject.js`、`mobile.css`）派生自开源项目
-[Ajwyunsx/deepseek-harness-mobile](https://github.com/Ajwyunsx/deepseek-harness-mobile)（MIT License，Copyright (c) 2026 DeepSeek）。
-相关版权与许可声明见 [NOTICE.md](NOTICE.md)。第三方内容的下游使用同样受其原始许可约束。
+本项目的移动端适配层（`entry/src/main/resources/rawfile/` 下的 `early-polyfill.js`、`inject.js`、`mobile.css`）派生自开源项目（MIT License），第三方归属与许可声明见 [NOTICE.md](NOTICE.md)。第三方内容的下游使用同样受其原始许可约束。
 
 ### 6. 安全建议（重要）
 
@@ -51,7 +49,7 @@
 
 ## English
 
-This project (`dsh-mobile-harmony`) is a **personal, experimental project** that lets a HarmonyOS device open the DeepSeek Harness (dsh) web UI. **Read this disclaimer in full before use.**
+This project (`dsh-mobile-harmony`) is a **personal open-source project** that lets a HarmonyOS device open the Harness (dsh) web UI. **Read this disclaimer in full before use.**
 
 ### 1. No warranty
 
@@ -65,7 +63,7 @@ By using this project you accept all risk, including but not limited to:
 - **Device**: WebView script injection, barcode scanning, and network access may behave unexpectedly across HarmonyOS versions.
 - **Credentials**: exposing access tokens, cookies, or Huawei developer signing material may leak credentials.
 - **Network exposure**: the bundled public-access recipe (Cloudflare Quick Tunnel) publishes the service to the internet with a random hostname and no extra authentication beyond a single-use token. **Do not leave it running; stop the tunnel when you are done.**
-- **Compliance**: you are responsible for complying with applicable laws, your network provider's terms, and DeepSeek Harness' own terms.
+- **Compliance**: you are responsible for complying with applicable laws, your network provider's terms, and the Harness service's own terms.
 
 ### 3. Limitation of liability
 
@@ -73,13 +71,12 @@ In no event shall the author or contributors be liable for any direct, indirect,
 
 ### 4. Not official
 
-This is an **unofficial, non-commercial** community project. It is **not affiliated with, endorsed by, or sponsored by** DeepSeek or Huawei Technologies Co., Ltd. All product names, trademarks, and icons are the property of their respective owners and are used for descriptive purposes only.
+This is an **unofficial, non-commercial** community project. It is **not affiliated with, endorsed by, or sponsored by** Huawei Technologies Co., Ltd. All product names, trademarks, and icons are the property of their respective owners and are used for descriptive purposes only.
 
 ### 5. Upstream and third-party content
 
 The mobile adaptation layer (`early-polyfill.js`, `inject.js`, `mobile.css` under `entry/src/main/resources/rawfile/`) is derived from
-[Ajwyunsx/deepseek-harness-mobile](https://github.com/Ajwyunsx/deepseek-harness-mobile) (MIT License, Copyright (c) 2026 DeepSeek).
-See [NOTICE.md](NOTICE.md). Downstream use of that content remains subject to its original license.
+an open-source project (MIT License); see [NOTICE.md](NOTICE.md) for attribution. Downstream use of that content remains subject to its original license.
 
 ### 6. Security advice
 

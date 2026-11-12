@@ -1,8 +1,9 @@
 # 隐私政策 / Privacy Policy
 
-最后更新：2026-11-08
+最后更新：2026-11-12
 
-本隐私政策适用于 **DSH Mobile**（HarmonyOS 应用，包名以最终上架包名为准，以下简称"本应用"）。
+本隐私政策适用于 **Harness Mobile**（HarmonyOS 应用，包名 `cn.cnzht.dshmobile`，以下简称"本应用"）。
+开发者：以开发者中心登记为准。
 
 ## 1. 我们收集哪些信息
 
@@ -36,8 +37,7 @@
 
 | 权限 | 用途 |
 |---|---|
-| `ohos.permission.INTERNET` | 连接你指定的服务器以显示界面 |
-| `ohos.permission.INTERNET` | 判断网络是否可用，给出准确错误提示 |
+| `ohos.permission.INTERNET` | 连接你指定的服务器以显示界面，并判断网络是否可用，给出准确错误提示 |
 
 本应用不申请相机权限以外的敏感权限；扫码功能使用系统扫码器，
 若不使用扫码功能，可拒绝相机授权，手填地址同样可用。
@@ -55,14 +55,19 @@
 ## 7. 第三方
 
 - 本应用为开源项目（MIT License）：<https://github.com/cnzht/dsh-mobile-harmony>
-- 移动端适配层派生自开源项目 deepseek-harness-mobile（MIT）。
-- 本应用与 DeepSeek、华为技术有限公司均无隶属、合作或背书关系。
+- 移动端适配层派生自开源项目（MIT License），第三方归属见 [NOTICE.md](../NOTICE.md)。
+- 本应用与华为技术有限公司无隶属、合作或背书关系。
 
-## 8. 政策变更
+## 8. 首次使用
+
+应用首次启动时，会弹出隐私政策摘要，请阅读后点"同意"方可使用；
+你的选择仅保存在设备本地。首页页脚也提供"隐私政策 / 用户协议"入口，可随时重新查看。
+
+## 9. 政策变更
 
 本政策如有变更，将更新本页面并修改"最后更新"日期。继续使用即视为接受更新后的政策。
 
-## 9. 联系方式
+## 10. 联系方式
 
 如有隐私相关问题，请通过以下方式联系：
 
@@ -72,11 +77,12 @@
 
 ## English (summary)
 
-DSH Mobile collects **no personal data**. The app stores only the server URL and
+Harness Mobile collects **no personal data**. The app stores only the server URL and
 access token you enter, locally in app-private storage, and uses them solely to
 connect to the server you specify. No analytics, advertising, push or crash-reporting
-SDKs are included. Permissions used: `INTERNET` (reach your server) and
-`GET_NETWORK_INFO` (accurate error messages). Camera access, if granted for QR
+SDKs are included. Permission used: `ohos.permission.INTERNET` (reach your server
+and tell network errors apart). Camera access, if granted for QR
 scanning, only decodes the QR text via the system scanner; images are not stored or
-uploaded. This is an open-source (MIT) project, not affiliated with DeepSeek or Huawei.
+uploaded. On first launch the app shows a privacy-policy summary and asks for your
+consent before use. This is an open-source (MIT) project, not affiliated with Huawei.
 Contact: <https://github.com/cnzht/dsh-mobile-harmony/issues>

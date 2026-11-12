@@ -139,4 +139,4 @@ hdc shell bm dump -n cn.cnzht.dshmobile | Select-String bundleName
 
 - 密钥库与 `PASSWORD.txt` **不要提交仓库**（`.gitignore` 已覆盖 `*.p12/*.cer/*.p7b`）
 - Profile 有效期约 3 年（本例 2026-11-08 → 2029-11-08），到期需重新生成
-- `versionCode`（现 `1000000`）每次重新提审必须递增
+- `versionCode`（现 `1000001`）每次重新提审必须递增
