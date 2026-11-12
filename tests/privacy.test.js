@@ -9,10 +9,10 @@
  * construction) and also checks for phone numbers, email addresses and
  * long digit runs that could be an App ID / Developer ID.
  *
- * Both name patterns are built from code points below, so this test file
- * itself never contains the name in plain text. The escaped form is only
- * ever legitimate inside tests/ (this scan must spell it to build the
- * pattern), so tests/ are skipped for that one check.
+ * Both name patterns are derived at run time from the local, gitignored
+ * developer.json, so this test file itself never contains the name in any
+ * form. Without that file (fresh clone) the name checks are skipped; the
+ * phone / email / long-digit checks always run.
  */
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -22,12 +22,25 @@ const { execFileSync } = require('node:child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 
-// Registered developer name, from code points (never spelled out here).
-const DEV_NAME = String.fromCharCode(0x0000, 0x0000);
-// The same name as it appears escaped in ArkTS source text: backslash-u
-// sequences, also built from code points (92 is backslash).
-const BS = String.fromCharCode(92);
-const DEV_NAME_ESCAPED = BS + 'u0000' + BS + 'u0000';
+// Registered developer name, from the local gitignored config (or null
+// without it). The escaped form is built from the same value.
+function loadDevName() {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(
+      path.join(ROOT, 'entry/src/main/resources/rawfile/developer.json'), 'utf8'));
+    return typeof cfg.developerName === 'string' && cfg.developerName.length > 0
+      ? cfg.developerName
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+const DEV_NAME = loadDevName();
+const DEV_NAME_ESCAPED = DEV_NAME === null ? null
+  : [...DEV_NAME]
+    .map((c) => String.fromCharCode(92) + 'u' + c.codePointAt(0).toString(16).padStart(4, '0'))
+    .join('');
 
 function trackedFiles() {
   const out = execFileSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8' });
@@ -47,8 +60,8 @@ test('no author personal data in any tracked file', () => {
     if (isBinary(buf)) continue; // e.g. entry/mdbx.dat, screenshots
     const text = buf.toString('utf8');
     const rel = path.relative(ROOT, file);
-    if (text.includes(DEV_NAME)) hits.push(`${rel}: registered developer name`);
-    if (!rel.startsWith('tests' + path.sep) && text.includes(DEV_NAME_ESCAPED)) {
+    if (DEV_NAME !== null && text.includes(DEV_NAME)) hits.push(`${rel}: registered developer name`);
+    if (DEV_NAME_ESCAPED !== null && !rel.startsWith('tests' + path.sep) && text.includes(DEV_NAME_ESCAPED)) {
       hits.push(`${rel}: escaped developer name`);
     }
     if (/1[3-9]\d{9}/.test(text)) hits.push(`${rel}: phone-number-like digits`);
@@ -73,7 +86,9 @@ test('developer.json is gitignored and untracked; the example is tracked and cle
   const example = fs.readFileSync(path.join(ROOT, exampleRel), 'utf8');
   const cfg = JSON.parse(example);
   assert.equal(typeof cfg.developerName, 'string');
-  assert.ok(!example.includes(DEV_NAME), 'example must not contain the real name');
+  if (DEV_NAME !== null) {
+    assert.ok(!example.includes(DEV_NAME), 'example must not contain the real name');
+  }
   // The local config itself must exist on this machine for local builds.
   const local = path.join(ROOT, 'entry/src/main/resources/rawfile/developer.json');
   assert.ok(fs.existsSync(local), 'local developer.json missing on this machine');

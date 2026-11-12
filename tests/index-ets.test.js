@@ -18,6 +18,24 @@ const INDEX = fs.readFileSync(
   'utf8',
 );
 
+/**
+ * Registered developer name, read from the local, gitignored
+ * developer.json (see developer.json.example). Returns null on a fresh
+ * clone without the file, so the name never appears in this test file in
+ * any form — not as text, not as code points, not as an escape sequence.
+ */
+function loadDevName() {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(
+      path.join(__dirname, '..', 'entry/src/main/resources/rawfile/developer.json'), 'utf8'));
+    return typeof cfg.developerName === 'string' && cfg.developerName.length > 0
+      ? cfg.developerName
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Extract the body of a method by brace matching from its signature. */
 function extractMethodBody(src, signature) {
   const start = src.indexOf(signature);
@@ -155,11 +173,17 @@ test('About: developer name comes from local developer.json, never hardcoded', (
   const about = extractMethodBody(INDEX, 'aboutCard() {');
   assert.match(about, /Text\(this\.developerName\.length > 0 \? 'Developer: ' \+ this\.developerName : 'Developer'\)/);
   assert.match(about, /Text\('About Harness Mobile'\)/);
-  // Neither the literal name (built from code points so this test file itself
-  // stays clean) nor the ArkTS escape form may appear in the page.
-  const name = String.fromCharCode(0x0000, 0x0000);
-  assert.ok(!INDEX.includes(name), 'hardcoded developer name in Index.ets');
-  assert.ok(!INDEX.includes('\\u0000\\u0000'), 'escaped developer name in Index.ets');
+  // Neither the literal name nor the ArkTS escape form may appear in the
+  // page. The name comes from the local developer.json (see loadDevName);
+  // without that file the check is skipped.
+  const name = loadDevName();
+  if (name !== null) {
+    assert.ok(!INDEX.includes(name), 'hardcoded developer name in Index.ets');
+    const escaped = [...name]
+      .map((c) => '\\u' + c.codePointAt(0).toString(16).padStart(4, '0'))
+      .join('');
+    assert.ok(!INDEX.includes(escaped), 'escaped developer name in Index.ets');
+  }
   assert.doesNotMatch(INDEX, /沛沛0518/);
   assert.doesNotMatch(INDEX, /experimental/i);
   assert.doesNotMatch(INDEX, /Use at your own risk/);
