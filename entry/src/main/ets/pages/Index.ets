@@ -453,10 +453,12 @@ struct Index {
       '(function(){try{return window.__dshListSessions?window.__dshListSessions():"[]";' +
       '}catch(e){return "[]";}})()')
       .then((r: string) => {
+        hilog.info(0x0000, TAG, 'sessions raw %{public}s', r.slice(0, 120));
         this.sessionsList = this.toTitleList(r);
         this.drawerOpen = true;
       })
-      .catch(() => {
+      .catch((e: Error) => {
+        hilog.warn(0x0000, TAG, 'sessions call failed: %{public}s', e.message);
         this.sessionsList = [];
         this.drawerOpen = true;
       });
@@ -467,16 +469,29 @@ struct Index {
     if (raw.length === 0) {
       return out;
     }
-    try {
-      const parsed: Object = JSON.parse(raw) as Object;
-      if (Array.isArray(parsed)) {
-        const arr = parsed as string[];
-        for (let i = 0; i < arr.length && out.length < 30; i++) {
-          out.push(String(arr[i]));
+    // runJavaScript's result is JSON-encoded by ArkWeb: a JS string return value
+    // arrives as a quoted JSON string ("\"[...]\""), not as the raw JSON text.
+    // Unwrap up to three layers so both shapes yield the same titles.
+    let value: string = raw;
+    for (let pass = 0; pass < 3; pass++) {
+      try {
+        const parsed: Object = JSON.parse(value) as Object;
+        if (Array.isArray(parsed)) {
+          const arr = parsed as string[];
+          for (let i = 0; i < arr.length && out.length < 30; i++) {
+            out.push(String(arr[i]));
+          }
+          return out;
         }
+        if (typeof parsed === 'string') {
+          value = parsed as string;
+          continue;
+        }
+        return out;
+      } catch (e) {
+        hilog.warn(0x0000, TAG, 'list parse failed');
+        return out;
       }
-    } catch (e) {
-      hilog.warn(0x0000, TAG, 'list parse failed');
     }
     return out;
   }

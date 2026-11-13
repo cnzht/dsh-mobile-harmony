@@ -60,9 +60,11 @@ function toTitleList() {
   const body = extractMethodBody(INDEX, 'private toTitleList(raw: string): string[]');
   const js = body
     .replace(/: string\[\]/g, '')
+    .replace(/: string/g, '')
     .replace(/: Object/g, '')
     .replace(/ as Object/g, '')
-    .replace(/ as string\[\]/g, '');
+    .replace(/ as string\[\]/g, '')
+    .replace(/ as string/g, '');
   const warnings = [];
   const hilog = { warn() { warnings.push('warn'); } };
   const fn = new Function('raw', 'hilog', 'TAG', js); // eslint-disable-line no-new-func
@@ -128,6 +130,12 @@ test('toTitleList: empty string and empty array give []', () => {
 test('toTitleList: parses a JSON array of titles', () => {
   const { fn } = toTitleList();
   assert.deepEqual(fn('["Alpha","Beta"]'), ['Alpha', 'Beta']);
+});
+
+test('toTitleList: unwraps the JSON-encoded string ArkWeb returns', () => {
+  // runJavaScript hands back a JS string result as a quoted JSON string.
+  const { fn } = toTitleList();
+  assert.deepEqual(fn(JSON.stringify(JSON.stringify(['Alpha', 'Beta']))), ['Alpha', 'Beta']);
 });
 
 test('toTitleList: invalid JSON gives [] instead of throwing', () => {
