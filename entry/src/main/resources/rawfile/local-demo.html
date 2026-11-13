@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<!--
+  Harness Mobile 单机版 · 本地演示页
+  - 全部内容为本地静态示例，不连接任何服务器，不发起任何网络请求。
+  - 样式参考 entry/src/main/resources/rawfile/mobile.css 的视觉语言
+    （配色、字号、气泡样式），样式全部内联，不引用任何外部资源。
+  - 与原生侧的会话抽屉通过 window.__dshListSessions /
+    window.__dshClickSession 两个函数对接（与联网版相同的桥接约定）。
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Harness Mobile · 本地演示</title>
+<style>
+html, body { margin: 0; padding: 0; width: 100%; overflow-x: hidden; }
+body {
+  font: 15px/1.55 system-ui, "Microsoft YaHei", sans-serif;
+  color: #182431; background: #F5F5F7;
+  -webkit-tap-highlight-color: transparent;
+}
+.topbar {
+  display: flex; align-items: center; gap: 8px;
+  background: #FFFFFF; border-bottom: 1px solid #E5E7EB;
+  padding: 10px 14px; position: sticky; top: 0;
+}
+.topbar h1 { font-size: 16px; margin: 0; flex: 1; }
+.badge {
+  font-size: 11px; color: #0A59F7; background: #E8F0FE;
+  padding: 2px 8px; border-radius: 10px; white-space: nowrap;
+}
+.ai-badge {
+  font-size: 10px; color: #B25E00; background: #FFF4E0;
+  padding: 2px 6px; border-radius: 4px; white-space: nowrap;
+}
+.note {
+  margin: 12px 14px; padding: 10px 12px; font-size: 12px; color: #666666;
+  background: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 8px;
+}
+.sessions { margin: 0 14px 12px; }
+.sessions h2, .chat h2 { font-size: 13px; color: #666666; margin: 4px 0 8px; }
+.session-item {
+  background: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 8px;
+  padding: 10px 12px; margin-bottom: 8px; font-size: 14px; cursor: pointer;
+}
+.session-item.active { border-color: #0A59F7; background: #F2F7FF; }
+.chat { margin: 0 14px 12px; }
+.msg { max-width: 82%; padding: 10px 12px; border-radius: 12px; margin-bottom: 10px; font-size: 14px; }
+.msg.user { margin-left: auto; background: #0A59F7; color: #FFFFFF; border-bottom-right-radius: 4px; }
+.msg.assistant { background: #FFFFFF; border: 1px solid #E5E7EB; border-bottom-left-radius: 4px; }
+.msg .tag {
+  display: inline-block; font-size: 10px; color: #B25E00; background: #FFF4E0;
+  padding: 1px 6px; border-radius: 4px; margin-bottom: 4px;
+}
+.composer {
+  display: flex; gap: 8px; margin: 0 14px 16px;
+}
+.composer input {
+  flex: 1; height: 40px; border: 1px solid #E5E7EB; border-radius: 20px;
+  padding: 0 14px; font-size: 14px; background: #FFFFFF; color: #999999;
+}
+.composer button {
+  height: 40px; padding: 0 16px; border: none; border-radius: 20px;
+  background: #EBECEF; color: #999999; font-size: 14px;
+}
+.footer { text-align: center; font-size: 11px; color: #999999; margin: 8px 0 24px; }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <span class="badge">本地演示</span>
+  <h1>Harness Mobile</h1>
+  <span class="ai-badge">AI 生成内容</span>
+</header>
+
+<p class="note">本页为本地静态示例内容，仅作功能演示：不连接任何服务器、不发送任何网络请求、不收集任何信息。下方会话与回复均为固定示例文本，不是实时生成的结果。</p>
+
+<section class="sessions">
+  <h2>示例会话</h2>
+  <div id="sessionList"></div>
+</section>
+
+<section class="chat">
+  <h2 id="chatTitle">示例会话</h2>
+  <div id="messages"></div>
+</section>
+
+<div class="composer">
+  <input type="text" placeholder="本地演示：示例内容不可发送" disabled>
+  <button type="button" disabled>发送</button>
+</div>
+
+<p class="footer">Harness Mobile · 本地单机演示版 · github.com/cnzht/dsh-mobile-harmony</p>
+
+<script>
+var SESSIONS = [
+  {
+    title: '示例会话：入门介绍',
+    messages: [
+      { role: 'user', text: '这个应用能做什么？' },
+      { role: 'assistant', text: '这是一个本地演示示例：展示会话列表、消息气泡和顶栏标识的样式。示例文本为静态内容，不是实时生成的结果。' },
+      { role: 'user', text: '需要联网吗？' },
+      { role: 'assistant', text: '不需要。本应用完全不联网，不连接任何服务器，所有内容都保存在应用本地。' }
+    ]
+  },
+  {
+    title: '示例会话：写作提纲',
+    messages: [
+      { role: 'user', text: '帮我列一个周末出游计划的提纲。' },
+      { role: 'assistant', text: '示例提纲（静态样例）：一、目的地与交通；二、行程安排；三、物品清单；四、预算。以上为固定示例文本，仅作演示。' }
+    ]
+  },
+  {
+    title: '示例会话：代码评审',
+    messages: [
+      { role: 'user', text: '这段示例代码有什么问题？' },
+      { role: 'assistant', text: '示例回答（静态样例）：一、边界条件未处理；二、错误分支缺少提示；三、建议补充注释。以上为固定示例文本，仅作演示。' }
+    ]
+  }
+];
+
+function esc(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function renderList() {
+  var box = document.getElementById('sessionList');
+  var html = '';
+  for (var i = 0; i < SESSIONS.length; i++) {
+    html += '<div class="session-item' + (i === current ? ' active' : '') + '" data-i="' + i + '">' + esc(SESSIONS[i].title) + '</div>';
+  }
+  box.innerHTML = html;
+  var items = box.querySelectorAll('.session-item');
+  for (var j = 0; j < items.length; j++) {
+    items[j].addEventListener('click', function (ev) {
+      renderSession(parseInt(ev.currentTarget.getAttribute('data-i'), 10));
+    });
+  }
+}
+
+function renderSession(i) {
+  current = i;
+  var s = SESSIONS[i];
+  document.getElementById('chatTitle').textContent = s.title;
+  var html = '';
+  for (var k = 0; k < s.messages.length; k++) {
+    var m = s.messages[k];
+    if (m.role === 'user') {
+      html += '<div class="msg user">' + esc(m.text) + '</div>';
+    } else {
+      html += '<div class="msg assistant"><span class="tag">示例</span><br>' + esc(m.text) + '</div>';
+    }
+  }
+  document.getElementById('messages').innerHTML = html;
+  renderList();
+}
+
+function showNew() {
+  document.getElementById('chatTitle').textContent = '新会话（示例）';
+  document.getElementById('messages').innerHTML =
+    '<div class="msg assistant"><span class="tag">示例</span><br>新建会话（示例）：本地演示不连接服务器，不会创建真实会话。</div>';
+  renderList();
+}
+
+var current = 0;
+
+/* 与原生会话抽屉的桥接：与联网版相同的约定。 */
+window.__dshListSessions = function () {
+  var titles = [];
+  for (var i = 0; i < SESSIONS.length; i++) {
+    titles.push(SESSIONS[i].title);
+  }
+  return JSON.stringify(titles);
+};
+
+window.__dshClickSession = function (i) {
+  if (i < 0) {
+    showNew();
+    return 'new';
+  }
+  if (i >= SESSIONS.length) {
+    return 'oob';
+  }
+  renderSession(i);
+  return 'ok';
+};
+
+renderSession(0);
+</script>
+</body>
+</html>

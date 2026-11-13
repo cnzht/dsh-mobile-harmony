@@ -46,18 +46,19 @@ test('mobile.css has balanced braces (comments stripped first)', () => {
   assert.ok(open > 50, 'expected a substantial stylesheet');
 });
 
-test('module.json5 requests only ohos.permission.INTERNET', () => {
+test('module.json5 requests no permissions at all (standalone: fully offline)', () => {
   const src = read('entry/src/main/module.json5');
   const perms = [...src.matchAll(/"name"\s*:\s*"([^"]+)"/g)].map((m) => m[1])
     .filter((name) => name.startsWith('ohos.permission.'));
-  assert.deepEqual(perms, ['ohos.permission.INTERNET']);
+  assert.deepEqual(perms, []);
+  assert.doesNotMatch(src, /ohos\.permission\.INTERNET/);
 });
 
-test('bundle name is cn.cnzht.dshmobile and version is 1.0.1 / 1000001', () => {
+test('bundle name is cn.cnzht.dshmobile and version is 1.0.2 / 1000002', () => {
   const src = read('AppScope/app.json5');
   assert.match(src, /"bundleName"\s*:\s*"cn\.cnzht\.dshmobile"/);
-  assert.match(src, /"versionName"\s*:\s*"1\.0\.1"/);
-  assert.match(src, /"versionCode"\s*:\s*1000001/);
+  assert.match(src, /"versionName"\s*:\s*"1\.0\.2"/);
+  assert.match(src, /"versionCode"\s*:\s*1000002/);
 });
 
 test('display name is Harness Mobile in the app and ability labels', () => {
@@ -69,10 +70,12 @@ test('display name is Harness Mobile in the app and ability labels', () => {
     assert.match(src, /"value"\s*:\s*"Harness Mobile"/);
     assert.doesNotMatch(src, /DSH Mobile/);
   }
-  // The home-screen title and the About title in the page must match too.
+  // The About title in the page must match too, and the home screen is the
+  // bundled demo page in this variant, so its heading carries the name.
   const index = read('entry/src/main/ets/pages/Index.ets');
-  assert.match(index, /Text\('Harness Mobile'\)/);
   assert.match(index, /Text\('About Harness Mobile'\)/);
+  const demo = read('entry/src/main/resources/rawfile/local-demo.html');
+  assert.match(demo, /<h1>Harness Mobile<\/h1>/);
 });
 
 /**

@@ -1,12 +1,14 @@
 'use strict';
 /**
- * Index.ets — the ArkTS page. There is no DevEco / Harmony SDK on this
- * machine, so the page is tested by (a) extracting the one pure function
- * (toTitleList) from the real source, transpiling its ArkTS type
- * annotations away, and running it, and (b) statically asserting the
- * guarded behaviours in the source: connect() rejects an empty address,
- * only a main-frame 401/403 returns to setup, and the Sessions button
- * label follows drawerOpen (the sessionsOpen bug fixed in this change).
+ * Index.ets — the ArkTS page (standalone variant). There is no DevEco /
+ * Harmony SDK on this machine, so the page is tested by (a) extracting the
+ * one pure function (toTitleList) from the real source, transpiling its
+ * ArkTS type annotations away, and running it, and (b) statically
+ * asserting the guarded behaviours in the source: the Sessions button
+ * label follows drawerOpen (the sessionsOpen bug fixed in this change),
+ * and the privacy consent dialog remembers its choice.
+ * The online variant's connect/scan/setup flow does not exist here:
+ * standalone.test.js asserts that none of it remains.
  */
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -106,40 +108,9 @@ test('toTitleList: non-string items are stringified, like the UI expects', () =>
   assert.deepEqual(fn('[1,2,null]'), ['1', '2', 'null']);
 });
 
-test('connect: empty address sets the error and does not navigate', () => {
-  const body = extractMethodBody(INDEX, 'private connect(): void');
-  assert.match(body, /const target = this\.draft\.trim\(\);/);
-  assert.match(body, /if \(target\.length === 0\) \{\s*this\.error = 'Please enter the dsh web URL';\s*return;/);
-  // The navigation path only runs after that guard.
-  assert.ok(body.indexOf("this.url = target;") > body.indexOf('Please enter the dsh web URL'));
-  assert.match(body, /this\.loading = true;/);
-});
-
-test('http errors: only a main-frame 401/403 returns to setup', () => {
-  const handler = extractMethodBody(INDEX, '.onHttpErrorReceive((e: OnHttpErrorReceiveEvent) => {');
-  assert.match(handler, /code === 401 \|\| code === 403/);
-  assert.match(handler, /e\.request\.isMainFrame\(\)/);
-  // handleHttpError is called from exactly one place (this handler).
-  const calls = [...INDEX.matchAll(/this\.handleHttpError\(/g)].length;
-  assert.equal(calls, 1);
-  // handleHttpError itself refills the draft and clears the URL.
-  const body = extractMethodBody(INDEX, 'private handleHttpError(url: string): void');
-  assert.match(body, /this\.draft = this\.url;/);
-  assert.match(body, /this\.url = '';?/);
-  assert.match(body, /this\.lastInjectedUrl = '';?/);
-});
-
 test('Sessions button: label follows drawerOpen, sessionsOpen is gone', () => {
   assert.match(INDEX, /Button\(this\.drawerOpen \? 'Close' : 'Sessions'\)/);
   assert.doesNotMatch(INDEX, /sessionsOpen/);
-});
-
-test('backToSetup: clears the drawer and the session list, not just the URL', () => {
-  const body = extractMethodBody(INDEX, 'private backToSetup(): void');
-  assert.match(body, /this\.drawerOpen = false;/);
-  assert.match(body, /this\.sessionsList = \[\];/);
-  assert.match(body, /this\.url = '';?/);
-  assert.match(body, /this\.lastInjectedUrl = '';?/);
 });
 
 test('toggleSessions / pickSession: both paths close through drawerOpen', () => {
@@ -149,12 +120,6 @@ test('toggleSessions / pickSession: both paths close through drawerOpen', () => 
   assert.doesNotMatch(toggle, /sessionsOpen/);
   const pick = extractMethodBody(INDEX, 'private pickSession(i: number): void');
   assert.match(pick, /this\.drawerOpen = false;/);
-});
-
-test('injectOnce: a repeated URL is not re-injected', () => {
-  const body = extractMethodBody(INDEX, 'private injectOnce(url: string): void');
-  assert.match(body, /if \(url\.length > 0 && url === this\.lastInjectedUrl\) \{\s*return;/);
-  assert.match(body, /window\.__dshMobileAttached/);
 });
 
 test('About: developer name comes from local developer.json, never hardcoded', () => {
@@ -220,20 +185,26 @@ test('privacy consent: first-launch dialog exists and the choice is remembered',
   // and has no tap-outside dismiss, so consent cannot be bypassed by accident.
   const build = extractMethodBody(INDEX, 'build() {');
   assert.match(build, /if \(this\.privacyOpen\) \{\s*Column\(\) \{\s*this\.privacyCard\(\)/);
-  // Setup view keeps a consent banner and permanent policy / agreement links.
-  assert.match(INDEX, /使用前请先阅读并同意隐私政策/);
-  assert.match(INDEX, /Text\('隐私政策'\)\.fontSize\(12\)/);
-  assert.match(INDEX, /Text\('用户协议'\)\.fontSize\(12\)/);
-  // The links point at the published policy / agreement pages.
-  assert.match(INDEX, /const PRIVACY_URL: string = 'https:\/\/cnzht\.github\.io\/dsh-mobile-harmony\/privacy\.html';/);
-  assert.match(INDEX, /const EULA_URL: string = 'https:\/\/cnzht\.github\.io\/dsh-mobile-harmony\/eula\.html';/);
+  // Standalone: the policy / agreement links open bundled local files,
+  // never an external URL.
+  assert.match(INDEX, /\$rawfile\('privacy\.html'\)/);
+  assert.match(INDEX, /\$rawfile\('eula\.html'\)/);
+  assert.doesNotMatch(INDEX, /github\.io/);
+  const openPrivacy = extractMethodBody(INDEX, 'private openPrivacyPage(): void');
+  assert.match(openPrivacy, /this\.pageSrc = \$rawfile\('privacy\.html'\);/);
+  assert.match(openPrivacy, /this\.onPolicyPage = true;/);
+  const openEula = extractMethodBody(INDEX, 'private openEulaPage(): void');
+  assert.match(openEula, /this\.pageSrc = \$rawfile\('eula\.html'\);/);
+  const back = extractMethodBody(INDEX, 'private backToDemo(): void');
+  assert.match(back, /this\.pageSrc = \$rawfile\('local-demo\.html'\);/);
+  assert.match(back, /this\.onPolicyPage = false;/);
 });
 
 test('AI content label: top bar badge and About explanation', () => {
   // The badge sits in the chat top bar, next to the Sessions button.
   assert.match(INDEX, /Text\('AI 生成内容'\)/);
   assert.match(INDEX, /backgroundColor\('#FFF4E0'\)/);
-  // About states the content comes from the user's own deployed service.
+  // About states the demo page is static sample text, not live generation.
   const about = extractMethodBody(INDEX, 'aboutCard() {');
-  assert.match(about, /会话内容由你自部署的服务生成，本应用仅负责展示，不提供 AI 生成服务/);
+  assert.match(about, /演示页内容为本地静态示例，仅作功能演示；本应用不提供 AI 生成服务，也不连接任何服务器/);
 });

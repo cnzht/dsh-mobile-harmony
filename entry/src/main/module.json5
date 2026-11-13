@@ -12,11 +12,7 @@
     "deliveryWithInstall": true,
     "installationFree": false,
     "pages": "$profile:main_pages",
-    "requestPermissions": [
-      {
-        "name": "ohos.permission.INTERNET"
-      }
-    ],
+    // Standalone variant: no network at all, so no permissions are requested.
     "abilities": [
       {
         "name": "EntryAbility",

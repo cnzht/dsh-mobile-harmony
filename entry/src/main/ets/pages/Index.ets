@@ -1,8 +1,6 @@
 import { webview } from '@kit.ArkWeb';
 import { preferences } from '@kit.ArkData';
 import { util } from '@kit.ArkTS';
-import { scanBarcode } from '@kit.ScanKit';
-import { common } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 
 const TAG: string = 'DshMobile';
@@ -18,26 +16,28 @@ interface DeveloperConfig {
   developerName?: string;
 }
 
-/** Privacy policy / user agreement pages (GitHub Pages; enable Pages for the repo or the links 404). */
-const PRIVACY_URL: string = 'https://cnzht.github.io/dsh-mobile-harmony/privacy.html';
-const EULA_URL: string = 'https://cnzht.github.io/dsh-mobile-harmony/eula.html';
-
 /*
- * HarmonyOS client for a self-hosted Harness service.
- * Upstream runs `dsh web` inside a proot Ubuntu container on the phone.
- * HarmonyOS has no proot/root container, so this port keeps what matters:
- * the mobile adaptation layer (early-polyfill.js / inject.js / mobile.css)
- * injected into the service web UI served by a host on the LAN.
+ * Standalone (offline-only) variant of Harness Mobile.
+ *
+ * There is no server in this build and no account of any kind: the home
+ * screen is a static demo page bundled in rawfile (local-demo.html), the
+ * app requests no permissions and makes no network requests at all.
+ * Privacy policy and user agreement are bundled as local files too
+ * (privacy.html / eula.html in rawfile) and shown inside the WebView.
+ * The native Sessions drawer, About card and first-launch privacy consent
+ * dialog are kept from the online variant; the drawer reads its titles
+ * from the demo page itself (window.__dshListSessions /
+ * window.__dshClickSession, defined in local-demo.html).
  */
 @Entry
 @Component
 struct Index {
   private controller: webview.WebviewController = new webview.WebviewController();
-  @State url: string = '';
-  @State draft: string = '';
-  @State error: string = '';
-  @State hint: string = '';
-  @State loading: boolean = false;
+  /** Local demo page bundled in rawfile; policy pages replace it temporarily. */
+  @State pageSrc: string = $rawfile('local-demo.html');
+  /** True while a bundled policy/agreement page is shown instead of the demo. */
+  @State onPolicyPage: boolean = false;
+  @State loading: boolean = true;
   @State sessionsList: string[] = [];
   @State drawerOpen: boolean = false;
   @State aboutOpen: boolean = false;
@@ -47,12 +47,7 @@ struct Index {
   @State privacyDeclined: boolean = false;
   /** Developer display name, read from the local gitignored developer.json. */
   @State developerName: string = '';
-  private early: string = '';
-  private inject: string = '';
-  private css: string = '';
   private prefs: preferences.Preferences | undefined = undefined;
-  /** Last document that already received the mobile adaptation layer. */
-  private lastInjectedUrl: string = '';
 
   aboutToAppear(): void {
     this.readAssets();
@@ -60,19 +55,9 @@ struct Index {
   }
 
   private readAssets(): void {
-    try {
-      const rm = this.getUIContext().getHostContext()!.resourceManager;
-      const decoder = util.TextDecoder.create('utf-8');
-      this.early = decoder.decodeToString(rm.getRawFileContentSync('early-polyfill.js'));
-      this.inject = decoder.decodeToString(rm.getRawFileContentSync('inject.js'));
-      this.css = decoder.decodeToString(rm.getRawFileContentSync('mobile.css'));
-    } catch (e) {
-      hilog.error(0x0000, TAG, 'read rawfile failed: %{public}s', JSON.stringify(e));
-    }
-
-    // Developer name is a separate try/catch on purpose: the config file is
-    // local-only (see developer.json.example), so a missing file must never
-    // block the three assets above — the About card then shows a bare label.
+    // Developer name is read in its own try/catch on purpose: the config file
+    // is local-only (see developer.json.example), so a missing file must never
+    // break the page — the About card then shows a bare label.
     try {
       const rm = this.getUIContext().getHostContext()!.resourceManager;
       const decoder = util.TextDecoder.create('utf-8');
@@ -91,10 +76,6 @@ struct Index {
     preferences.getPreferences(this.getUIContext().getHostContext()!, 'dsh_mobile')
       .then((p: preferences.Preferences) => {
         this.prefs = p;
-        const saved = p.getSync('serverUrl', '') as string;
-        if (saved.length > 0) {
-          this.draft = saved;
-        }
         // First launch: ask the user to read the privacy policy before use.
         // The choice is remembered in preferences; a missing flag means "not yet agreed".
         const accepted = p.getSync('privacyAccepted', false) as boolean;
@@ -122,167 +103,32 @@ struct Index {
     this.privacyDeclined = true;
   }
 
-  /** "暂不使用": close the dialog; setupView keeps a banner that reopens it. */
+  /** "暂不使用": close the dialog; the privacy dialog reopens on next launch. */
   private openPrivacyLater(): void {
     this.privacyOpen = false;
   }
 
-  private connect(): void {
-    const target = this.draft.trim();
-    if (target.length === 0) {
-      this.error = 'Please enter the dsh web URL';
-      return;
-    }
-    this.error = '';
-    this.hint = '';
-    this.lastInjectedUrl = '';
-    this.loading = true;
-    this.url = target;
-    if (this.prefs !== undefined) {
-      this.prefs.putSync('serverUrl', target);
-      this.prefs.flush();
-    }
+  /** Show the bundled privacy policy in the WebView; the top bar offers a way back. */
+  private openPrivacyPage(): void {
+    this.pageSrc = $rawfile('privacy.html');
+    this.onPolicyPage = true;
+    this.privacyOpen = false;
   }
 
-  private styleScript(): string {
-    // Upstream mobile.css turns the left sidebar into an overlay drawer whenever
-    // dsh's sidebar is expanded, which it is on first paint at phone widths — so
-    // the drawer (and its scrim) appears by itself. Fighting the class made
-    // inject.js re-add it on every mutation (measured: open/close/open every
-    // ~500ms). Instead pin the visuals: never show the drawer or scrim unless we
-    // explicitly opt in with body.dsh-user-drawer.
-    const overrides = 'body:not(.dsh-user-drawer) div[class*="_sidebarCol"]{display:none!important}' +
-      '#dsh-mobile-drawer-mask{display:none!important}' +
-      'body.dsh-user-drawer div[class*="_sidebarCol"]{z-index:2147483600!important;' +
-      'box-shadow:0 0 24px rgba(0,0,0,.25)!important;background:#fff!important}' +
-      'button,[role=button]{min-height:40px!important}' +
-      'body{padding-bottom:env(safe-area-inset-bottom,0px)!important}' +
-      '[class*=label],[class*=title],[class*=name]{overflow-wrap:break-word!important}' +
-      'textarea,[contenteditable=true]{max-height:32vh!important;overflow-y:auto!important}';
-    return '(function(){var id="dsh-mobile-css";var old=document.getElementById(id);if(old){old.remove();}' +
-      'var s=document.createElement("style");s.id=id;s.textContent=' + JSON.stringify(this.css) + ';' +
-      '(document.head||document.documentElement).appendChild(s);' +
-      'var oid="dsh-mobile-override";var o=document.getElementById(oid);if(o){o.remove();}' +
-      'var s2=document.createElement("style");s2.id=oid;s2.textContent=' + JSON.stringify(overrides) + ';' +
-      '(document.head||document.documentElement).appendChild(s2);' +
-      'if(!window.__dshErrs){window.__dshErrs=[];' +
-      'window.addEventListener("error",function(e){window.__dshErrs.push(String(e.message||"err").slice(0,120));},true);' +
-      'window.addEventListener("unhandledrejection",function(e){window.__dshErrs.push(String(e.reason).slice(0,80));});}' +
-      'if(!window.__dshOutsideTap){window.__dshOutsideTap=true;' +
-      'document.addEventListener("click",function(ev){' +
-      'if(!document.body.classList.contains("dsh-user-drawer"))return;' +
-      'if(window.__dshOpenGuard&&Date.now()-window.__dshOpenGuard<1500)return;' +
-      'var t=ev.target;' +
-      'if(t&&t.closest&&t.closest("button[class*=_toggle],button[aria-label*=Sidebar],button[aria-label*=Open]"))return;' +
-      'var pnl=document.querySelector("div[class*=_sidebarCol]");' +
-      'if(pnl&&pnl.contains(t))return;' +
-      'document.body.classList.remove("dsh-user-drawer");},true);}' +
-      'if(!window.__dshSessionRows){window.__dshSessionRows=function(){' +'var col=document.querySelector("div[class*=_sidebarCol]");if(!col){return [];}' +'var bs=col.querySelectorAll("button"),out=[];var skip=/^(\\u65b0\\u4f1a\\u8bdd|\\u63d2\\u4ef6|\\u81ea\\u52a8\\u5316\\u4efb\\u52a1|\\u66f4\\u591a|\\u8bbe\\u7f6e|\\u641c\\u7d22)$/;' +'for(var i=0;i<bs.length;i++){var b=bs[i];var t=(b.innerText||"").replace(/\\s+/g," ").trim();' +'if(!t||t.length>60)continue;if(skip.test(t))continue;out.push(b);}' +'return out;};' +'window.__dshListSessions=function(){try{var r=window.__dshSessionRows();var t=[];' +'for(var i=0;i<r.length;i++){t.push((r[i].innerText||"").replace(/\\s+/g," ").trim().slice(0,60));}' +'return JSON.stringify(t);}catch(e){return "[]";}};' +'window.__dshClickSession=function(i){try{if(i<0){var c=document.querySelector("div[class*=_sidebarCol]");' +'var nb=c?c.querySelector("button[class*=newSession]"):null;if(nb){nb.click();return "new";}return "none";}' +'var r=window.__dshSessionRows();if(i>=r.length){return "oob";}r[i].click();return "ok";}catch(e){return "ERR";}};' +      '})();'
+  /** Show the bundled user agreement in the WebView; the top bar offers a way back. */
+  private openEulaPage(): void {
+    this.pageSrc = $rawfile('eula.html');
+    this.onPolicyPage = true;
+    this.privacyOpen = false;
   }
 
-  /**
-   * Apply the upstream mobile adaptation layer exactly once per document.
-   * dsh's token entry redirects (token -> cookie -> app route), so onPageEnd
-   * fires for intermediate hops; re-running inject.js on each hop re-applies the
-   * sidebar gating rules and makes the right sidebar slide in repeatedly.
-   */
-  private injectOnce(url: string): void {
-    if (url.length > 0 && url === this.lastInjectedUrl) {
-      return;
-    }
-    this.lastInjectedUrl = url;
-    hilog.info(0x0000, TAG, 'inject mobile layer for %{public}s', url);
-    // inject.js must run against the real (un-hidden) layout: applying mobile.css
-    // first makes its own DOM lookups throw ("Cannot read properties of null
-    // (reading 'tagName')") and leaves the dsh UI half-initialized (blank screen).
-    // So keep inject -> CSS order, wrap inject so a throw cannot skip the CSS, and
-    // let settle() collapse the drawer state it latches.
-    const guarded = '(function(){try{if(window.__dshMobileAttached){return;}window.__dshMobileAttached=true;' +
-      'try{\n' + this.inject + '\n}catch(e){}' + this.styleScript() + '}catch(e){}})();';
-    this.controller.runJavaScript(guarded)
-      .catch((e: Error) => {
-        hilog.warn(0x0000, TAG, 'inject failed: %{public}s', e.message);
-      });
-    // Probe the drawer/rightbar state once the upstream script settled.
-    setTimeout(() => {
-      this.controller.runJavaScript(
-        '(function(){try{var b=document.body;var m=document.getElementById("dsh-mobile-drawer-mask");' +
-        'var cols=document.querySelectorAll("div[data-rightbar-col],div[class*=_rightbarCol]");' +
-        'var sb=document.querySelector("div[class*=_sidebarCol]");' +
-        'var open=document.querySelectorAll(".dsh-mobile-open,.dsh-mobile-empty");' +
-        'return JSON.stringify({cls:b.className.slice(0,140),mask:!!m,' +
-        'maskDisp:m?getComputedStyle(m).display:"-",rbCols:cols.length,openCls:open.length,' +
-        'sbW:sb?Math.round(sb.getBoundingClientRect().width):-1,' +
-        'vw:innerWidth,vh:innerHeight,dpr:devicePixelRatio,' +
-        'title:(document.title||"").slice(0,40),textLen:(b.innerText||"").length,' +
-        'snip:(b.innerText||"").slice(0,60),href:(location.href||"").slice(0,90),' +
-        'cookies:(document.cookie||"").length,' +
-        'sw:document.documentElement.scrollWidth,cw:innerWidth,' +
-        'ovf:document.documentElement.scrollWidth>innerWidth+1,' +
-        'fs:getComputedStyle(document.documentElement).fontSize,' +
-        'roots:document.querySelectorAll("#root,#app,main,[class*=appRoot]").length,' +
-        'earlyMark:!!window.__dshMobileEarly});}catch(e){return "ERR:"+e.message;}})()')
-        .then((r: string) => { hilog.info(0x0000, TAG, 'probe %{public}s', r); })
-        .catch(() => {});
-      this.controller.runJavaScript(
-        '(function(){try{var w=innerWidth,out=[];var all=document.querySelectorAll("body *");' +
-        'for(var i=0;i<all.length&&out.length<6;i++){var e=all[i];var r=e.getBoundingClientRect();' +
-        'if(r.width===0&&r.height===0)continue;' +
-        'if(r.right>w+2||r.left<-2||r.width>w+2){' +
-        'out.push((e.className&&e.className.toString().slice(0,26)||e.tagName)+"|x"+Math.round(r.left)+' +
-        '"|w"+Math.round(r.width)+"|r"+Math.round(r.right));}}' +
-        'return JSON.stringify({w:w,n:out.length,items:out});}catch(e){return "ERR:"+e.message;}})()')
-        .then((r: string) => { hilog.info(0x0000, TAG, 'overflow %{public}s', r); })
-        .catch(() => {});
-      this.controller.runJavaScript(
-        '(function(){try{var out=[],all=document.querySelectorAll("body *");' +
-        'for(var i=0;i<all.length&&out.length<8;i++){var e=all[i];' +
-        'if(!e.clientWidth&&!e.clientHeight)continue;' +
-        'if(e.scrollWidth<=e.clientWidth+2)continue;' +
-        'var cs=getComputedStyle(e);' +
-        'out.push({c:(e.className||e.tagName).toString().slice(0,24),' +
-        'sw:e.scrollWidth,cw:e.clientWidth,ov:cs.overflowX,ws:cs.whiteSpace,' +
-        't:(e.innerText||"").replace(/\s+/g," ").slice(0,26)});}' +
-        'return JSON.stringify({n:out.length,items:out});}catch(e){return "ERR:"+e.message;}})()')
-        .then((r: string) => { hilog.info(0x0000, TAG, 'clip %{public}s', r); })
-        .catch(() => {});
-    }, 1500);
-    this.settle();
-    setTimeout(() => this.probeSidebar(), 4000);
-    setTimeout(() => this.auditButtons(), 5000);
+  /** Return from a policy page to the local demo page. */
+  private backToDemo(): void {
+    this.pageSrc = $rawfile('local-demo.html');
+    this.onPolicyPage = false;
   }
 
-  /**
-   * dsh expands the sidebar on first paint, so upstream inject.js arms its drawer
-   * and the scrim shows by itself. Deleting the class made inject.js re-add it on
-   * every mutation (measured open/close flipping every ~500ms), so instead drive
-   * upstream's own close path once: clicking the scrim runs its collapse animation
-   * and leaves dsh genuinely collapsed. Afterwards mirror later open/close into our
-   * own opt-in class, which is what the styleScript overrides key on.
-   */
-  private settle(): void {
-    setTimeout(() => {
-      this.controller.runJavaScript(
-        '(function(){try{var b=document.body;' +
-        'if(b.classList.contains("dsh-mobile-drawer")){' +
-        'var t=document.querySelector("button[class*=_toggle]")||' +
-        'document.querySelector("button[aria-label*=收起]")||' +
-        'document.querySelector("button[aria-label*=Collapse]");' +
-        'if(t){t.click();}else{var m=document.getElementById("dsh-mobile-drawer-mask");if(m){m.click();}}}' +
-        'b.classList.remove("dsh-user-drawer");return "closed";' +
-        '}catch(e){return "ERR:"+e.message;}})()')
-        .then((r: string) => { hilog.info(0x0000, TAG, 'settle %{public}s', r); this.mirrorDrawer(); })
-        .catch(() => {});
-    }, 2200);
-  }
-
-  /**
-   * Open/close the sessions drawer ourselves.
-   * Verified on device: adding body.dsh-user-drawer lifts our CSS hold, and then
-   * dsh's own "open sidebar" control gives the column a real 311x699 box; the scrim
-   * dsh renders closes it again, and we drop our class on that tap.
-   */
-  /** Open the native sessions drawer: pull titles from dsh, render natively. */
+  /** Open the native sessions drawer: pull titles from the demo page, render natively. */
   private toggleSessions(): void {
     if (this.drawerOpen) {
       this.drawerOpen = false;
@@ -377,127 +223,6 @@ struct Index {
     .alignItems(HorizontalAlign.Start)
   }
 
-
-  /** Leave the chat view: collapse the drawer state before returning to setup. */
-  private backToSetup(): void {
-    this.drawerOpen = false;
-    this.sessionsList = [];
-    this.loading = false;
-    this.lastInjectedUrl = '';
-    this.url = '';
-  }
-  /** Debug: dump the dsh sidebar row structure (data source for the native drawer). */
-  private probeSidebar(): void {
-    this.controller.runJavaScript(
-      '(function(){try{var col=document.querySelector("div[class*=_sidebarCol]");' +
-      'if(!col){return "no sidebar col";}' +
-      'var rows=[],all=col.querySelectorAll("*");' +
-      'for(var i=0;i<all.length&&rows.length<12;i++){var e=all[i];' +
-      'var t=(e.innerText||"").replace(/\s+/g," ").trim();' +
-      'if(t.length<2||t.length>48)continue;' +
-      'var r=e.getBoundingClientRect();' +
-      'rows.push({tag:e.tagName,c:(e.className||"").toString().slice(0,26),' +
-      'role:e.getAttribute("role")||"",h:Math.round(r.height),t:t.slice(0,34)});}' +
-      'return JSON.stringify({n:rows.length,items:rows});}catch(e){return "ERR:"+e.message;}})()')
-      .then((r: string) => { hilog.info(0x0000, TAG, 'sidebar %{public}s', r); })
-      .catch(() => {});
-  }
-
-  /** Mirror upstream drawer state into our opt-in class so the panel may render. */
-  private mirrorDrawer(): void {
-    this.controller.runJavaScript(
-      '(function(){try{if(window.__dshMirror){return "on";}window.__dshMirror=true;' +
-      'var prev=document.body.classList.contains("dsh-mobile-drawer");' +
-      'new MutationObserver(function(){' +
-      'var cur=document.body.classList.contains("dsh-mobile-drawer");' +
-      'if(cur===prev)return;prev=cur;' +
-      'if(cur){document.body.classList.add("dsh-user-drawer");}' +
-      'else{document.body.classList.remove("dsh-user-drawer");}' +
-      '}).observe(document.body,{attributes:true,attributeFilter:["class"]});' +
-      'return "mirror";}catch(e){return "ERR";}})()')
-      .then((r: string) => { hilog.info(0x0000, TAG, 'mirror %{public}s', r); })
-      .catch(() => {});
-  }
-  /**
-   * Debug: walk workspace/session selection, then measure the chat page layout
-   * (composer geometry, clipped text, overflow, small tap targets).
-   */
-  private auditButtons(): void {
-    this.controller.runJavaScript(
-      '(function(){try{' +
-      'function byText(re){var all=document.querySelectorAll("body *");' +
-      'for(var i=0;i<all.length;i++){var e=all[i];var t=(e.innerText||"").trim();' +
-      'if(t.length&&t.length<40&&re.test(t)){var r=e.getBoundingClientRect();' +
-      'if(r.width>20&&r.height>10)return e;}}return null;}' +
-      'function tap(e,n){if(!e){console.log("DSHNAV miss "+n);return;}try{e.click();console.log("DSHNAV tap "+n);}catch(x){}}' +
-      'tap(byText(/选择一个工作区/),"pick");' +
-      'setTimeout(function(){var b=document.querySelectorAll("[class*=workspace],[class*=Workspace],li,[role=listitem]");' +
-      'tap(b.length?b[0]:null,"ws1");' +
-      'setTimeout(function(){var s=document.querySelectorAll("[class*=session],[class*=Session],[class*=history] li");' +
-      'tap(s.length?s[0]:null,"session");' +
-      'setTimeout(function(){measure();},1400);},1400);},1200);' +
-      'function measure(){var vw=innerWidth,vh=innerHeight;var out={vw:vw,vh:vh,docH:document.documentElement.scrollHeight,' +
-      'clipped:[],small:0,boxes:{},title:document.title.slice(0,26),textLen:(document.body.innerText||"").length};' +
-      'var ta=document.querySelector("textarea,[contenteditable=true]");' +
-      'if(ta){var r=ta.getBoundingClientRect();out.boxes.composer={x:Math.round(r.left),y:Math.round(r.top),' +
-      'w:Math.round(r.width),h:Math.round(r.height),bottom:Math.round(r.bottom)};}' +
-      'var all=document.querySelectorAll("body *");var w2=0;' +
-      'var danger=/删除|清空|中断|停止|delete|clear|stop/i;' +
-      'for(var i=0;i<all.length;i++){var e=all[i];if(!e.clientWidth&&!e.clientHeight)continue;' +
-      'var cs=getComputedStyle(e);' +
-      'if(e.scrollWidth>e.clientWidth+2&&cs.overflowX!=="visible"&&out.clipped.length<6){' +
-      'out.clipped.push({c:(e.className||e.tagName).toString().slice(0,20),sw:e.scrollWidth,cw:e.clientWidth,' +
-      't:(e.innerText||"").replace(/\s+/g," ").slice(0,22)});}' +
-      'var rr=e.getBoundingClientRect();' +
-      'if(rr.width>vw+2||rr.left<-2){w2++;}' +
-      'if((e.tagName==="BUTTON"||e.getAttribute("role")==="button")&&rr.height>0&&rr.height<36&&!danger.test(e.innerText||""))out.small++;}' +
-      'out.overflowX=w2;' +
-      'console.log("DSHLAYOUT "+JSON.stringify(out));}' +
-      'return "started";}catch(e){return "ERR:"+e.message;}})()')
-      .then((r: string) => { hilog.info(0x0000, TAG, 'audit %{public}s', r); })
-      .catch(() => {});
-  }
-
-  /**
-   * A consumed/expired token yields a main-frame 401 from dsh's auth fence.
-   * Only that precise signal returns to setup: the earlier text heuristic
-   * false-positived on ordinary dsh pages and bounced users back to setup.
-   */
-  private handleHttpError(url: string): void {
-    hilog.warn(0x0000, TAG, 'main frame rejected: %{public}s', url);
-    if (this.url.length === 0) {
-      return;
-    }
-    this.hint = 'Token 已失效（一次性或服务重启）。请重新粘贴 dsh web 打印的完整 URL。';
-    this.draft = this.url;
-    this.url = '';
-    this.lastInjectedUrl = '';
-  }
-
-  /**
-   * Open the system scanner and use the decoded URL directly.
-   * The host prints a QR of `<base>/?token=<single-use token>`; scanning it is
-   * the fastest path because the token never has to be typed or read.
-   */
-  private scan(): void {
-    const ctx = this.getUIContext().getHostContext() as common.Context;
-    scanBarcode.startScanForResult(ctx)
-      .then((result: scanBarcode.ScanResult) => {
-        const value = (result.originalValue ?? '').trim();
-        hilog.info(0x0000, TAG, 'scan result length: %{public}d', value.length);
-        if (value.length === 0) {
-          this.error = 'Scan returned an empty result';
-          return;
-        }
-        this.draft = value;
-        this.connect();
-      })
-      .catch((e: Error) => {
-        hilog.warn(0x0000, TAG, 'scan cancelled or failed: %{public}s', e.message);
-        this.hint = 'Scan cancelled';
-      });
-  }
-
   /** About: toggled as an ArkUI overlay (AlertDialog is unreliable on some devices). */
   private showAbout(): void {
     this.aboutOpen = !this.aboutOpen;
@@ -507,14 +232,14 @@ struct Index {
   aboutCard() {
     Column({ space: 8 }) {
       Text('About Harness Mobile').fontSize(17).fontWeight(FontWeight.Medium)
-      Text('HarmonyOS client for your own Harness service')
+      Text('Harness Mobile · 本地单机演示版')
         .fontSize(12).fontColor('#666666').textAlign(TextAlign.Center).maxLines(2)
       Divider().margin({ top: 4, bottom: 4 })
       Text(this.developerName.length > 0 ? 'Developer: ' + this.developerName : 'Developer').fontSize(14)
-      Text('Repo: github.com/cnzht/dsh-mobile-harmony').fontSize(13).fontColor('#0A59F7')
-        .onClick(() => this.openGithub())
+      // Plain text on purpose: the standalone build must not open any link.
+      Text('Repo: github.com/cnzht/dsh-mobile-harmony').fontSize(13).fontColor('#666666')
       Text('License: MIT').fontSize(13).fontColor('#666666')
-      Text('会话内容由你自部署的服务生成，本应用仅负责展示，不提供 AI 生成服务。')
+      Text('演示页内容为本地静态示例，仅作功能演示；本应用不提供 AI 生成服务，也不连接任何服务器。')
         .fontSize(11).fontColor('#999999').textAlign(TextAlign.Center).maxLines(4)
       Button('OK')
         .fontSize(13).height(38).width('100%').margin({ top: 8 })
@@ -535,15 +260,15 @@ struct Index {
       Text('隐私政策').fontSize(17).fontWeight(FontWeight.Medium)
       Text('使用 Harness Mobile 前，请阅读隐私政策与用户协议。')
         .fontSize(13).fontColor('#333333').maxLines(3)
-      Text('本应用不收集任何个人信息。服务器地址与访问令牌仅保存在设备本地，仅用于连接你指定的服务器；会话内容只在你与你的服务器之间传输。')
+      Text('本应用完全不联网，不收集任何个人信息，不连接任何服务器；隐私政策与用户协议均在应用本地查看。')
         .fontSize(12).fontColor('#666666').maxLines(6)
       Row({ space: 16 }) {
         Text('隐私政策').fontSize(13).fontColor('#0A59F7')
           .decoration({ type: TextDecorationType.Underline, color: '#0A59F7' })
-          .onClick(() => this.openUrl(PRIVACY_URL))
+          .onClick(() => this.openPrivacyPage())
         Text('用户协议').fontSize(13).fontColor('#0A59F7')
           .decoration({ type: TextDecorationType.Underline, color: '#0A59F7' })
-          .onClick(() => this.openUrl(EULA_URL))
+          .onClick(() => this.openEulaPage())
       }
       if (this.privacyDeclined) {
         Text('需要同意隐私政策才能使用本应用。')
@@ -569,102 +294,26 @@ struct Index {
     .alignItems(HorizontalAlign.Start)
   }
 
-  private openUrl(url: string): void {
-    const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
-    ctx.openLink(url)
-      .catch((e: Error) => {
-        hilog.warn(0x0000, TAG, 'openLink failed: %{public}s', e.message);
-        this.hint = 'Cannot open browser';
-      });
-  }
-
-  private openGithub(): void {
-    this.openUrl('https://github.com/cnzht');
-  }
-
   @Builder
-  setupView() {
-    // Scrollable: the old fixed Column clipped its own content (title/notes cut off)
-    // whenever the content was taller than the viewport.
-    Scroll() {
-      Column({ space: 14 }) {
-        Text('Harness Mobile').fontSize(32).fontWeight(FontWeight.Bold)
-        Text('HarmonyOS client · connect to your own Harness host')
-          .fontSize(13).fontColor('#666666').textAlign(TextAlign.Center)
-          .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
-          .width('100%')
-        TextInput({ placeholder: 'http://<host>:<port>/?token=...', text: $$this.draft })
-          .width('100%').height(48).margin({ top: 10 })
-        Button('Connect').width('100%').height(44).onClick(() => this.connect())
-        Button('Scan QR code')
-          .width('100%').height(44)
-          .backgroundColor('#0A59F7')
-          .onClick(() => this.scan())
-        if (this.hint.length > 0) {
-          Text(this.hint).fontSize(13).fontColor('#E84026')
-            .textAlign(TextAlign.Center).width('100%').maxLines(3)
-        }
-        if (this.error.length > 0) {
-          Text(this.error).fontSize(13).fontColor('#E84026')
-            .textAlign(TextAlign.Center).width('100%').maxLines(2)
-        }
-        if (this.privacyDeclined) {
-          Row({ space: 8 }) {
-            Text('使用前请先阅读并同意隐私政策。').fontSize(12).fontColor('#E84026').layoutWeight(1)
-            Button('查看').fontSize(12).height(28).padding({ left: 12, right: 12 })
-              .backgroundColor('#0A59F7')
-              .onClick(() => { this.privacyOpen = true; })
-          }
-          .width('100%')
-        }
-        Text('Run `dsh web` on a PC/server, then paste the URL it prints. The token is single-use.')
-          .fontSize(12).fontColor('#999999').textAlign(TextAlign.Center)
-          .width('100%').maxLines(4)
-        Row({ space: 6 }) {
-          SymbolGlyph($r('sys.symbol.link')).fontSize(15).fontColor(['#0A59F7'])
-          Text('github.com/cnzht')
-            .fontSize(13).fontColor('#0A59F7')
-            .decoration({ type: TextDecorationType.Underline, color: '#0A59F7' })
-        }
-        .margin({ top: 6 })
-        .onClick(() => this.openGithub())
-        Row({ space: 16 }) {
-          Text('隐私政策').fontSize(12).fontColor('#0A59F7')
-            .decoration({ type: TextDecorationType.Underline, color: '#0A59F7' })
-            .onClick(() => this.openUrl(PRIVACY_URL))
-          Text('用户协议').fontSize(12).fontColor('#0A59F7')
-            .decoration({ type: TextDecorationType.Underline, color: '#0A59F7' })
-            .onClick(() => this.openUrl(EULA_URL))
-        }
-        .margin({ top: 2 })
-        Button('About')
-          .fontSize(12).height(30).padding({ left: 16, right: 16 })
-          .backgroundColor('#EBECEF').fontColor('#182431')
-          .margin({ bottom: 12 })
-          .onClick(() => this.showAbout())
-      }
-      .width('100%')
-      .padding({ left: 24, right: 24, top: 40, bottom: 40 })
-    }
-    .width('100%').height('100%')
-    .align(Alignment.Center)
-    .scrollBar(BarState.Off)
-    .backgroundColor('#F5F5F7')
-  }
-
-  @Builder
-  webView() {
+  demoView() {
     Column() {
       // Slim opaque bar instead of a floating translucent pill: the pill sat on
-      // top of the dsh UI and read as a permanent overlay ("蒙层").
+      // top of the page and read as a permanent overlay ("蒙层").
       Row() {
-        Button(this.drawerOpen ? 'Close' : 'Sessions')
-          .fontSize(11).height(28).padding({ left: 10, right: 10 })
-          .backgroundColor('#EBECEF').fontColor('#182431')
-          .onClick(() => this.toggleSessions())
-        // Explicit AI-generated-content label (AGC review): the chat content in
-        // the WebView is generated by the user's own deployed service; this app
-        // only renders it and provides no AI generation itself.
+        if (this.onPolicyPage) {
+          Button('‹ 返回演示')
+            .fontSize(11).height(28).padding({ left: 10, right: 10 })
+            .backgroundColor('#EBECEF').fontColor('#182431')
+            .onClick(() => this.backToDemo())
+        } else {
+          Button(this.drawerOpen ? 'Close' : 'Sessions')
+            .fontSize(11).height(28).padding({ left: 10, right: 10 })
+            .backgroundColor('#EBECEF').fontColor('#182431')
+            .onClick(() => this.toggleSessions())
+        }
+        // Explicit AI-generated-content label (AGC review): the demo page shows
+        // static sample text, and the label stays so the in-app labelling is
+        // identical to the online variant.
         Text('AI 生成内容')
           .fontSize(10).fontColor('#B25E00')
           .padding({ left: 6, right: 6, top: 2, bottom: 2 })
@@ -674,39 +323,21 @@ struct Index {
           .fontSize(11).height(28).padding({ left: 10, right: 10 })
           .backgroundColor('#EBECEF').fontColor('#182431')
           .onClick(() => this.showAbout())
-        Button('Setup')
-          .fontSize(11).height(28).padding({ left: 12, right: 12 })
-          .backgroundColor('#EBECEF').fontColor('#182431')
-          .onClick(() => this.backToSetup())
       }
       .width('100%').height(34).padding({ left: 12, right: 10 })
 
       Stack() {
-        Web({ src: this.url, controller: this.controller })
+        Web({ src: this.pageSrc, controller: this.controller })
           .width('100%').height('100%')
-        .domStorageAccess(true)
-        .javaScriptAccess(true)
-        .fileAccess(true)
-        .mixedMode(MixedMode.All)
-        // Chat page: the composer must stay visible when the soft keyboard opens,
-        // so resize the layout viewport instead of overlaying it.
-        .keyboardAvoidMode(WebKeyboardAvoidMode.RESIZE_CONTENT)
-        .onPageBegin(() => {
-          this.loading = true;
-          if (this.early.length > 0) {
-            this.controller.runJavaScript(this.early).catch(() => {});
-          }
-        })
-        .onPageEnd((e: OnPageEndEvent) => {
-          this.loading = false;
-          this.injectOnce(e.url);
-        })
-        .onHttpErrorReceive((e: OnHttpErrorReceiveEvent) => {
-          const code = e.response.getResponseCode();
-          if ((code === 401 || code === 403) && e.request.isMainFrame()) {
-            this.handleHttpError(e.request.getRequestUrl());
-          }
-        })
+          .domStorageAccess(true)
+          .javaScriptAccess(true)
+          .fileAccess(true)
+          .onPageBegin(() => {
+            this.loading = true;
+          })
+          .onPageEnd(() => {
+            this.loading = false;
+          })
         if (this.aboutOpen) {
           Column() {
             this.aboutCard()
@@ -728,7 +359,7 @@ struct Index {
         if (this.loading) {
           Column({ space: 12 }) {
             LoadingProgress().width(52).height(52).color('#0A59F7')
-            Text('Connecting...').fontSize(13).fontColor('#666666')
+            Text('正在加载本地演示…').fontSize(13).fontColor('#666666')
           }
           .width('100%').height('100%')
           .justifyContent(FlexAlign.Center)
@@ -743,11 +374,7 @@ struct Index {
   build() {
     Stack() {
       Column() {
-        if (this.url.length === 0) {
-          this.setupView()
-        } else {
-          this.webView()
-        }
+        this.demoView()
       }
       .width('100%').height('100%')
 
