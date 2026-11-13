@@ -46,12 +46,11 @@ test('mobile.css has balanced braces (comments stripped first)', () => {
   assert.ok(open > 50, 'expected a substantial stylesheet');
 });
 
-test('module.json5 requests no permissions at all (standalone: fully offline)', () => {
+test('module.json5 requests only INTERNET (standalone: LAN-only, sockets need it)', () => {
   const src = read('entry/src/main/module.json5');
   const perms = [...src.matchAll(/"name"\s*:\s*"([^"]+)"/g)].map((m) => m[1])
     .filter((name) => name.startsWith('ohos.permission.'));
-  assert.deepEqual(perms, []);
-  assert.doesNotMatch(src, /ohos\.permission\.INTERNET/);
+  assert.deepEqual(perms, ['ohos.permission.INTERNET']);
 });
 
 test('bundle name is cn.cnzht.dshmobile and version is 1.0.2 / 1000002', () => {

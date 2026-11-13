@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <!--
   Harness Mobile 单机版 · 隐私政策（应用内本地文件）
-  改编自 docs/privacy.html：单机版完全不联网，不连接任何服务器，
-  不申请任何权限，不保存服务器地址与访问令牌；外链已改为纯文本。
+  改编自 docs/privacy.html：单机版仅连接局域网内的服务器，不连接公共
+  互联网；服务器地址与访问令牌仅保存在设备本地；外链已改为纯文本。
 -->
 <html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -38,11 +38,13 @@ li{margin:6px 0} footer{margin-top:48px;color:#888;font-size:13px}
 
 <h2>2. 应用会处理哪些数据</h2>
 
-<p>本应用完全不联网，不产生任何网络传输。除首启隐私选择外，不保存任何数据：</p>
+<p>本应用<strong>仅连接局域网内的服务器，不连接公共互联网，不产生任何公网传输</strong>。除首启隐私选择与你填写的局域网服务器地址外，不保存其他数据：</p>
 
 <table>
 <tr><th>数据</th><th>存放位置</th><th>用途</th><th>是否外传</th></tr>
 <tr><td>是否同意隐私政策</td><td>设备本地应用私有存储</td><td>记住首启选择，不再重复弹窗</td><td>否</td></tr>
+<tr><td>局域网服务器地址与访问令牌</td><td>设备本地应用私有存储</td><td>连接你指定的局域网服务器，重启后自动重连</td><td>仅发送给你指定的局域网服务器</td></tr>
+<tr><td>会话内容</td><td>仅内存</td><td>在你与你的局域网服务器之间传输并展示</td><td>仅发送给你指定的局域网服务器</td></tr>
 <tr><td>演示页浏览状态</td><td>仅内存</td><td>显示本地示例内容</td><td>否</td></tr>
 </table>
 
@@ -50,17 +52,18 @@ li{margin:6px 0} footer{margin-top:48px;color:#888;font-size:13px}
 
 <h2>3. 网络访问说明</h2>
 
-<p>本应用<strong>完全不联网，没有任何网络行为</strong>，不连接任何服务器。</p>
+<p>本应用<strong>仅连接局域网内的服务器</strong>：可连接的地址限于 10.0.0.0/8、172.16.0.0/12、192.168.0.0/16、127.0.0.1 与 localhost，输入或扫码得到的其他地址会被拒绝，<strong>不连接公共互联网</strong>。未配置服务器时，首页展示打包在应用本地的演示页，无任何网络传输。</p>
 <p>演示页内容全部打包在应用本地，仅作功能演示。</p>
 
 <h2>4. 权限说明</h2>
 
-<p>本应用<strong>不申请任何权限</strong>。</p>
+<p>本应用只申请 <strong>ohos.permission.INTERNET</strong> 一个权限：局域网 socket 通信也需要该权限。本应用不申请定位、存储、麦克风、摄像头等任何其他权限。</p>
 
 <h2>5. 数据安全</h2>
 
 <ul>
-<li>首启隐私选择仅保存在设备本地的应用私有目录。</li>
+<li>首启隐私选择与局域网服务器地址仅保存在设备本地的应用私有目录，不上传任何服务器。</li>
+<li>会话内容只在你与你的局域网服务器之间传输，不经过任何第三方。</li>
 <li>卸载应用即清除上述本地数据。</li>
 </ul>
 
@@ -94,12 +97,17 @@ li{margin:6px 0} footer{margin-top:48px;color:#888;font-size:13px}
 <h2>English (summary)</h2>
 
 <p>Harness Mobile (standalone build) collects <strong>no personal data</strong> and
-makes <strong>no network requests at all</strong>. It connects to no server, requests
-no permissions, and includes no analytics, advertising, push or crash-reporting
-SDKs. The only locally stored data is your first-launch privacy consent choice.
-The demo page is bundled in the app and shows static sample text only. On first
-launch the app shows a privacy-policy summary and asks for your consent before use.
-This is an open-source (MIT) project, not affiliated with Huawei.</p>
+connects only to a server on your <strong>local network</strong> (10.0.0.0/8,
+172.16.0.0/12, 192.168.0.0/16, 127.0.0.1 or localhost); any other address is
+refused, so it never reaches the public internet. With no server configured it
+shows a bundled demo page and makes no network requests at all. It requests
+only the INTERNET permission, which LAN sockets need, and includes no
+analytics, advertising, push or crash-reporting SDKs. The only locally stored
+data is your first-launch privacy consent choice and the LAN server address
+and token you entered. The demo page is bundled in the app and shows static
+sample text only. On first launch the app shows a privacy-policy summary and
+asks for your consent before use. This is an open-source (MIT) project, not
+affiliated with Huawei.</p>
 <p>Contact: github.com/cnzht/dsh-mobile-harmony/issues</p>
 
 <footer>Harness Mobile · HarmonyOS · github.com/cnzht/dsh-mobile-harmony</footer>

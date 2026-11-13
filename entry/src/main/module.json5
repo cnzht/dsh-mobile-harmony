@@ -12,7 +12,14 @@
     "deliveryWithInstall": true,
     "installationFree": false,
     "pages": "$profile:main_pages",
-    // Standalone variant: no network at all, so no permissions are requested.
+    // Standalone variant: only the INTERNET permission, which LAN sockets
+    // need too (isLanUrl in Index.ets gates every connection to LAN
+    // addresses, so the app never reaches the public internet).
+    "requestPermissions": [
+      {
+        "name": "ohos.permission.INTERNET"
+      }
+    ],
     "abilities": [
       {
         "name": "EntryAbility",

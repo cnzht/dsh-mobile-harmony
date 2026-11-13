@@ -2,13 +2,14 @@
 /**
  * Index.ets — the ArkTS page (standalone variant). There is no DevEco /
  * Harmony SDK on this machine, so the page is tested by (a) extracting the
- * one pure function (toTitleList) from the real source, transpiling its
- * ArkTS type annotations away, and running it, and (b) statically
+ * pure functions (toTitleList, isLanUrl) from the real source, transpiling
+ * their ArkTS type annotations away, and running them, and (b) statically
  * asserting the guarded behaviours in the source: the Sessions button
  * label follows drawerOpen (the sessionsOpen bug fixed in this change),
  * and the privacy consent dialog remembers its choice.
- * The online variant's connect/scan/setup flow does not exist here:
- * standalone.test.js asserts that none of it remains.
+ * The connect/scan/setup flow is restored from the online variant but
+ * gated to LAN addresses (see isLanUrl below); standalone.test.js asserts
+ * the gate is wired into connect()/scan()/loadPrefs().
  */
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -67,6 +68,56 @@ function toTitleList() {
   const fn = new Function('raw', 'hilog', 'TAG', js); // eslint-disable-line no-new-func
   return { fn: (raw) => fn(raw, hilog, 'DshMobile'), warnings };
 }
+
+/** Minimal ArkTS -> JS for isLanUrl: strip its type annotations. */
+function isLanUrlFn() {
+  const body = extractMethodBody(INDEX, 'function isLanUrl(raw: string): boolean');
+  const js = body
+    .replace(/: string\[\]/g, '')
+    .replace(/: number\[\]/g, '')
+    .replace(/: string/g, '')
+    .replace(/: number/g, '');
+  return new Function('raw', js); // eslint-disable-line no-new-func
+}
+
+test('isLanUrl: private ranges, localhost and 127.0.0.1 pass', () => {
+  const isLanUrl = isLanUrlFn();
+  for (const u of [
+    'http://192.168.1.10:8080/?token=x',
+    'http://192.168.0.2',
+    'http://10.0.0.5:3000',
+    'http://10.255.255.255/',
+    'http://172.16.0.1:8080',
+    'http://172.31.255.255:8080',
+    'http://127.0.0.1:8080',
+    'http://localhost:8080/?token=x',
+    'http://LOCALHOST:8080',
+    'https://192.168.1.1:443',
+    'HTTP://192.168.1.1:8080',
+  ]) assert.equal(isLanUrl(u), true, u);
+});
+
+test('isLanUrl: public IPs, hostnames, missing scheme and bad octets are rejected', () => {
+  const isLanUrl = isLanUrlFn();
+  for (const u of [
+    '',
+    'http://',
+    '192.168.1.1:8080',
+    'ftp://192.168.1.1',
+    'http://8.8.8.8:8080',
+    'https://example.com',
+    'http://172.15.0.1',
+    'http://172.32.0.1',
+    'http://192.169.1.1',
+    'http://127.0.0.2',
+    'http://127.1.2.3',
+    'http://192.168.1.256:8080',
+    'http://192.168.1',
+    'http://192.168.1.1.1',
+    'http://evil192.168.1.1.com',
+    'http://[::1]:8080',
+  ]) assert.equal(isLanUrl(u), false, u);
+});
 
 test('toTitleList: empty string and empty array give []', () => {
   const { fn } = toTitleList();
@@ -204,7 +255,8 @@ test('AI content label: top bar badge and About explanation', () => {
   // The badge sits in the chat top bar, next to the Sessions button.
   assert.match(INDEX, /Text\('AI 生成内容'\)/);
   assert.match(INDEX, /backgroundColor\('#FFF4E0'\)/);
-  // About states the demo page is static sample text, not live generation.
+  // About states the demo page is static sample text, not live generation,
+  // and that a LAN server is the only other thing the app can connect to.
   const about = extractMethodBody(INDEX, 'aboutCard() {');
-  assert.match(about, /演示页内容为本地静态示例，仅作功能演示；本应用不提供 AI 生成服务，也不连接任何服务器/);
+  assert.match(about, /可连接局域网内的自部署服务，或使用本地演示；不连接公共互联网，不提供 AI 生成服务/);
 });

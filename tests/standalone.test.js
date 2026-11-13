@@ -2,11 +2,14 @@
 /**
  * Standalone variant regression tests.
  *
- * The standalone branch is the offline-only build: no server, no account,
- * no permissions, no network requests at all. The home screen is a static
- * demo page bundled in rawfile, and the privacy policy / user agreement
- * are bundled local files. These tests pin that down so a later merge from
- * main cannot silently reintroduce the online connect flow.
+ * The standalone branch is the LAN-only build: no public-internet access.
+ * The home screen is a static demo page bundled in rawfile, and the privacy
+ * policy / user agreement are bundled local files. Connecting to a server
+ * is still possible — manual address entry and QR scan are restored from
+ * the online variant — but every address is gated by isLanUrl in
+ * Index.ets: only 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.1
+ * and localhost may connect. These tests pin that down so a later merge
+ * from main cannot silently drop the gate (or reintroduce a public URL).
  */
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -26,35 +29,76 @@ const DEMO = read('entry/src/main/resources/rawfile/local-demo.html');
 const POLICY = read('entry/src/main/resources/rawfile/privacy.html');
 const EULA = read('entry/src/main/resources/rawfile/eula.html');
 
-test('standalone: WebView loads only the bundled demo page, never a remote URL', () => {
-  assert.match(INDEX, /@State pageSrc: string = \$rawfile\('local-demo\.html'\);/);
+test('standalone: WebView defaults to the bundled demo page', () => {
+  assert.match(INDEX, /@State pageSrc: Resource = \$rawfile\('local-demo\.html'\);/);
+  // The demo view renders the bundled page; the connected view renders the
+  // LAN server URL only after connect() has passed the LAN gate.
   assert.match(INDEX, /Web\(\{ src: this\.pageSrc, controller: this\.controller \}\)/);
-  assert.doesNotMatch(INDEX, /https?:\/\//);
+  assert.match(INDEX, /Web\(\{ src: this\.url, controller: this\.controller \}\)/);
+  // Routing: no saved server and no setup request means the demo page.
+  assert.match(INDEX, /else \{\s*this\.demoView\(\)/);
   assert.doesNotMatch(INDEX, /github\.io/);
-  assert.doesNotMatch(INDEX, /Web\(\{ src: this\.url/);
+  // No hardcoded remote host anywhere in the page.
+  assert.doesNotMatch(INDEX, /https?:\/\/\d+\.\d+\.\d+\.\d+/);
+  assert.doesNotMatch(INDEX, /trycloudflare\.com/);
 });
 
-test('standalone: no setup / connect / scan / remote-injection leftovers', () => {
-  assert.doesNotMatch(INDEX, /private connect\(\)|scanBarcode|setupView|backToSetup/);
-  assert.doesNotMatch(INDEX, /handleHttpError|onHttpErrorReceive|injectOnce|styleScript/);
-  assert.doesNotMatch(INDEX, /openLink|openGithub|serverUrl/);
-  assert.doesNotMatch(INDEX, /Scan QR/);
-  assert.doesNotMatch(INDEX, /\bdraft\b/);
-  assert.doesNotMatch(INDEX, /token/i);
-  assert.doesNotMatch(INDEX, /early-polyfill|inject\.js|mobile\.css/);
+test('standalone: setup offers both "local demo" and "connect to LAN server"', () => {
+  assert.match(INDEX, /setupView\(\) \{/);
+  assert.match(INDEX, /Button\('Connect'\)/);
+  assert.match(INDEX, /Button\('Scan QR code'\)/);
+  assert.match(INDEX, /Button\('使用本地演示'\)/);
+  assert.match(INDEX, /仅支持局域网地址/);
+  // The demo top bar also leads back to setup ("连接").
+  assert.match(INDEX, /Button\('连接'\)/);
 });
 
-test('standalone: module.json5 requests no permissions at all', () => {
+test('standalone: connect() gates every address on isLanUrl', () => {
+  const start = INDEX.indexOf('private connect(): void {');
+  assert.ok(start >= 0, 'connect() not found');
+  const body = INDEX.slice(start, INDEX.indexOf('\n  private scan(): void {', start));
+  // A bare host:port is normalised, then gated.
+  assert.match(body, /if \(target\.indexOf\(':\/\/'\) < 0\) \{\s*target = 'http:\/\/' \+ target;/);
+  assert.match(body, /if \(!isLanUrl\(target\)\) \{/);
+  assert.match(body, /仅支持局域网地址/);
+  assert.match(body, /this\.url = target;/);
+  assert.match(body, /this\.showSetup = false;/);
+  // The accepted address is remembered for the next launch.
+  assert.match(body, /this\.prefs\.putSync\('serverUrl', target\);/);
+});
+
+test('standalone: scan() routes the scanned URL through the same gate', () => {
+  assert.match(INDEX, /scanBarcode\.startScanForResult/);
+  const start = INDEX.indexOf('private scan(): void {');
+  assert.ok(start >= 0, 'scan() not found');
+  const body = INDEX.slice(start, INDEX.indexOf('\n  /**', start));
+  assert.match(body, /this\.draft = value;/);
+  assert.match(body, /this\.connect\(\);/);
+  // No direct assignment of a scanned URL to this.url anywhere.
+  assert.doesNotMatch(body, /this\.url = value/);
+});
+
+test('standalone: a saved server auto-connects only if it is still a LAN address', () => {
+  const start = INDEX.indexOf('private loadPrefs(): void {');
+  assert.ok(start >= 0, 'loadPrefs() not found');
+  const body = INDEX.slice(start, INDEX.indexOf('\n  private acceptPrivacy(): void {', start));
+  assert.match(body, /const saved = p\.getSync\('serverUrl', ''\) as string;/);
+  assert.match(body, /if \(isLanUrl\(saved\)\) \{\s*this\.url = saved;/);
+  assert.match(body, /已保存的服务器地址不是局域网地址/);
+});
+
+test('standalone: module.json5 requests only INTERNET (LAN sockets need it)', () => {
   const src = read('entry/src/main/module.json5');
-  assert.doesNotMatch(src, /requestPermissions/);
-  assert.doesNotMatch(src, /ohos\.permission\./);
+  const perms = [...src.matchAll(/"name"\s*:\s*"([^"]+)"/g)].map((m) => m[1])
+    .filter((name) => name.startsWith('ohos.permission.'));
+  assert.deepEqual(perms, ['ohos.permission.INTERNET']);
 });
 
 test('standalone: demo page is honest local sample content', () => {
   // Labels that must be present.
   assert.match(DEMO, /本地演示/);
   assert.match(DEMO, /<span class="ai-badge">AI 生成内容<\/span>/);
-  assert.match(DEMO, /不连接任何服务器/);
+  assert.match(DEMO, /只连接局域网内的地址/);
   assert.match(DEMO, /静态/);
   assert.match(DEMO, /不是实时生成/);
   // A sample workspace: session list + a sample conversation.
@@ -99,14 +143,16 @@ test('standalone: privacy policy and agreement are bundled local files', () => {
     assert.doesNotMatch(text, /DSH Mobile/i, `${name}: brand residue`);
     assert.doesNotMatch(text, /鸿蒙/, `${name}: brand residue`);
   }
-  // The bundled policy describes the offline variant, not the online one.
-  assert.match(POLICY, /完全不联网/);
-  assert.match(POLICY, /不申请任何权限/);
-  assert.doesNotMatch(POLICY, /ohos\.permission\.INTERNET/);
-  assert.doesNotMatch(POLICY, /扫码/);
-  assert.match(EULA, /不连接任何服务器/);
-  assert.match(EULA, /本地单机演示版/);
-  assert.doesNotMatch(EULA, /ohos\.permission\.INTERNET/);
+  // The bundled policy describes the LAN-only variant, not the offline one.
+  assert.match(POLICY, /仅连接局域网/);
+  assert.match(POLICY, /不连接公共互联网/);
+  assert.match(POLICY, /ohos\.permission\.INTERNET/);
+  assert.doesNotMatch(POLICY, /完全不联网/);
+  assert.doesNotMatch(POLICY, /不申请任何权限/);
+  assert.match(EULA, /不连接公共互联网/);
+  assert.match(EULA, /本地单机版/);
+  assert.match(EULA, /局域网/);
+  assert.doesNotMatch(EULA, /不连接任何服务器/);
 });
 
 test('standalone: version is 1.0.2 / 1000002 everywhere it is declared', () => {
