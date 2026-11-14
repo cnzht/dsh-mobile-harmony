@@ -114,6 +114,10 @@ function isLanUrl(raw: string): boolean {
 @Component
 struct Index {
   private controller: webview.WebviewController = new webview.WebviewController();
+  private connectTimer: number = -1;
+  // False once no Web component is mounted: calling into the detached
+  // controller throws synchronously (17100001) and used to kill the app.
+  private webAlive: boolean = true;
   /** Local demo page bundled in rawfile; policy pages replace it temporarily. */
   @State pageSrc: Resource = $rawfile('local-demo.html');
   /** True while a bundled policy/agreement page is shown instead of the current view. */
@@ -137,7 +141,6 @@ struct Index {
   @State developerName: string = '';
   private early: string = '';
   private inject: string = '';
-  private css: string = '';
   private prefs: preferences.Preferences | undefined = undefined;
   /** Last document that already received the mobile adaptation layer. */
   private lastInjectedUrl: string = '';
@@ -153,7 +156,6 @@ struct Index {
       const decoder = util.TextDecoder.create('utf-8');
       this.early = decoder.decodeToString(rm.getRawFileContentSync('early-polyfill.js'));
       this.inject = decoder.decodeToString(rm.getRawFileContentSync('inject.js'));
-      this.css = decoder.decodeToString(rm.getRawFileContentSync('mobile.css'));
     } catch (e) {
       hilog.error(0x0000, TAG, 'read rawfile failed: %{public}s', JSON.stringify(e));
     }
@@ -242,9 +244,11 @@ struct Index {
 
   /** "使用本地演示": leave setup and show the bundled demo page. */
   private useLocalDemo(): void {
+    this.webAlive = false;
     this.showSetup = false;
     this.url = '';
     this.pageSrc = $rawfile('local-demo.html');
+    this.stopConnectWatchdog();
     this.onPolicyPage = false;
   }
 
@@ -272,6 +276,7 @@ struct Index {
     this.hint = '';
     this.lastInjectedUrl = '';
     this.loading = true;
+    this.startConnectWatchdog();
     this.url = target;
     this.showSetup = false;
     if (this.prefs !== undefined) {
@@ -300,6 +305,62 @@ struct Index {
   }
 
   /**
+   * A LAN URL that nothing listens on yields a main-frame network error (or no
+   * page at all). Upstream behaviour was a silent blank WebView, so surface it:
+   * return to setup with the typed URL preserved and a concrete hint.
+   */
+  private handleConnectFailure(): void {
+    hilog.warn(0x0000, TAG, 'main frame failed to load, back to setup');
+    this.webAlive = false;
+    this.loading = false;
+    this.hint = '无法连接服务器：请确认地址、端口与 dsh web 已启动，且手机与服务器在同一局域网';
+    this.draft = this.url;
+    this.url = '';
+    this.showSetup = true;
+    this.lastInjectedUrl = '';
+    this.stopConnectWatchdog();
+  }
+
+  /**
+   * ArkWeb throws synchronously with 17100001 ("The WebviewController must be
+   * associated with a Web component") when the controller's Web has left the
+   * tree - e.g. a delayed probe firing right after a failed connect returned to
+   * setup. A throw inside a setTimeout callback is uncaught and terminates the
+   * process, so every controller call goes through this guard instead.
+   */
+  private js(script: string): Promise<string> {
+    if (!this.webAlive) {
+      hilog.info(0x0000, TAG, 'skip runJavaScript: web view detached');
+      return Promise.resolve('');
+    }
+    try {
+      return this.controller.runJavaScript(script);
+    } catch (e) {
+      this.webAlive = false;
+      hilog.warn(0x0000, TAG, 'runJavaScript threw: %{public}s', (e as Error).message);
+      return Promise.resolve('');
+    }
+  }
+
+  /** Safety net for hosts that blackhole the connection (no error event at all). */
+  private startConnectWatchdog(): void {
+    this.stopConnectWatchdog();
+    this.connectTimer = setTimeout(() => {
+      this.connectTimer = -1;
+      if (this.loading && this.url.length > 0) {
+        this.handleConnectFailure();
+      }
+    }, 20000);
+  }
+
+  private stopConnectWatchdog(): void {
+    if (this.connectTimer >= 0) {
+      clearTimeout(this.connectTimer);
+      this.connectTimer = -1;
+    }
+  }
+
+  /**
    * A consumed/expired token yields a main-frame 401 from dsh's auth fence.
    * Only that precise signal returns to setup: the earlier text heuristic
    * false-positived on ordinary dsh pages and bounced users back to setup.
@@ -310,10 +371,12 @@ struct Index {
       return;
     }
     this.hint = 'Token 已失效（一次性或服务重启）。请重新粘贴 dsh web 打印的完整 URL。';
+    this.webAlive = false;
     this.draft = this.url;
     this.url = '';
     this.showSetup = true;
     this.lastInjectedUrl = '';
+    this.stopConnectWatchdog();
   }
 
   /** Leave the chat view: collapse the drawer state before returning to setup. */
@@ -324,6 +387,7 @@ struct Index {
     this.lastInjectedUrl = '';
     this.url = '';
     this.showSetup = true;
+    this.stopConnectWatchdog();
   }
 
   private styleScript(): string {
@@ -341,10 +405,14 @@ struct Index {
       'body{padding-bottom:env(safe-area-inset-bottom,0px)!important}' +
       '[class*=label],[class*=title],[class*=name]{overflow-wrap:break-word!important}' +
       'textarea,[contenteditable=true]{max-height:32vh!important;overflow-y:auto!important}';
-    return '(function(){var id="dsh-mobile-css";var old=document.getElementById(id);if(old){old.remove();}' +
-      'var s=document.createElement("style");s.id=id;s.textContent=' + JSON.stringify(this.css) + ';' +
-      '(document.head||document.documentElement).appendChild(s);' +
-      'var oid="dsh-mobile-override";var o=document.getElementById(oid);if(o){o.remove();}' +
+    // The upstream 750-line mobile.css was written for the dsh 0.1.5 DOM. Applied
+    // to the current build it white-screens the WebView a few seconds after load
+    // (inject.js latches layout state from a tree the stylesheet then hides, and
+    // its late DOM lookups throw). The file stays in rawfile/ as upstream
+    // reference but is no longer injected; the overrides below cover what a phone
+    // actually needs (no auto drawer/scrim, 40px touch targets, bounded composer)
+    // and are safe to apply from any layout state.
+    return '(function(){var oid="dsh-mobile-override";var o=document.getElementById(oid);if(o){o.remove();}' +
       'var s2=document.createElement("style");s2.id=oid;s2.textContent=' + JSON.stringify(overrides) + ';' +
       '(document.head||document.documentElement).appendChild(s2);' +
       'if(!window.__dshErrs){window.__dshErrs=[];' +
@@ -359,7 +427,25 @@ struct Index {
       'var pnl=document.querySelector("div[class*=_sidebarCol]");' +
       'if(pnl&&pnl.contains(t))return;' +
       'document.body.classList.remove("dsh-user-drawer");},true);}' +
-      'if(!window.__dshSessionRows){window.__dshSessionRows=function(){' +'var col=document.querySelector("div[class*=_sidebarCol]");if(!col){return [];}' +'var bs=col.querySelectorAll("button"),out=[];var skip=/^(\\u65b0\\u4f1a\\u8bdd|\\u63d2\\u4ef6|\\u81ea\\u52a8\\u5316\\u4efb\\u52a1|\\u66f4\\u591a|\\u8bbe\\u7f6e|\\u641c\\u7d22)$/;' +'for(var i=0;i<bs.length;i++){var b=bs[i];var t=(b.innerText||"").replace(/\\s+/g," ").trim();' +'if(!t||t.length>60)continue;if(skip.test(t))continue;out.push(b);}' +'return out;};' +'window.__dshListSessions=function(){try{var r=window.__dshSessionRows();var t=[];' +'for(var i=0;i<r.length;i++){t.push((r[i].innerText||"").replace(/\\s+/g," ").trim().slice(0,60));}' +'return JSON.stringify(t);}catch(e){return "[]";}};' +'window.__dshClickSession=function(i){try{if(i<0){var c=document.querySelector("div[class*=_sidebarCol]");' +'var nb=c?c.querySelector("button[class*=newSession]"):null;if(nb){nb.click();return "new";}return "none";}' +'var r=window.__dshSessionRows();if(i>=r.length){return "oob";}r[i].click();return "ok";}catch(e){return "ERR";}};' +      '})();'
+      'if(!window.__dshSessionRows){window.__dshSessionRows=function(){' +
+      'var col=document.querySelector("div[class*=_sidebarCol]");if(!col){return [];}' +
+      'var all=col.querySelectorAll("[data-row-key]");var out=[];' +
+      'for(var i=0;i<all.length;i++){var k=all[i].getAttribute("data-row-key")||"";' +
+      'if(k.indexOf("session:")===0){out.push(all[i]);}}' +
+      'if(!out.length){var rows=col.querySelectorAll("div[class*=_sessionRow]");' +
+      'for(var j=0;j<rows.length;j++){out.push(rows[j]);}}' +
+      'return out;};' +
+      'window.__dshListSessions=function(){try{var r=window.__dshSessionRows();var t=[];' +
+      'for(var i=0;i<r.length;i++){var el=r[i].querySelector("span[class*=_title]");' +
+      'var x=el?(el.textContent||""):(r[i].textContent||"");x=x.trim().slice(0,60);t.push(x);}' +
+      'return JSON.stringify(t);}catch(e){return "[]";}};' +
+      'window.__dshClickSession=function(i){try{if(i<0){var c=document.querySelector("div[class*=_sidebarCol]");' +
+      'var nb=c?c.querySelector("button[class*=newSession]"):null;if(nb){nb.click();return "new";}return "none";}' +
+      'var r=window.__dshSessionRows();if(i>=r.length){return "oob";}r[i].click();return "ok";}catch(e){return "ERR";}};' +
+      // Close the __dshSessionRows guard AND the IIFE opened at the top of this
+      // script. (The guard's brace was missing, so the whole style/bridge script
+      // was a syntax error and runJavaScript silently rejected it.)
+      '}})();'
   }
 
   private injectOnce(url: string): void {
@@ -375,13 +461,13 @@ struct Index {
     // let settle() collapse the drawer state it latches.
     const guarded = '(function(){try{if(window.__dshMobileAttached){return;}window.__dshMobileAttached=true;' +
       'try{\n' + this.inject + '\n}catch(e){}' + this.styleScript() + '}catch(e){}})();';
-    this.controller.runJavaScript(guarded)
+    this.js(guarded)
       .catch((e: Error) => {
         hilog.warn(0x0000, TAG, 'inject failed: %{public}s', e.message);
       });
     // Probe the drawer/rightbar state once the upstream script settled.
     setTimeout(() => {
-      this.controller.runJavaScript(
+      this.js(
         '(function(){try{var b=document.body;var m=document.getElementById("dsh-mobile-drawer-mask");' +
         'var cols=document.querySelectorAll("div[data-rightbar-col],div[class*=_rightbarCol]");' +
         'var sb=document.querySelector("div[class*=_sidebarCol]");' +
@@ -400,7 +486,7 @@ struct Index {
         'earlyMark:!!window.__dshMobileEarly});}catch(e){return "ERR:"+e.message;}})()')
         .then((r: string) => { hilog.info(0x0000, TAG, 'probe %{public}s', r); })
         .catch(() => {});
-      this.controller.runJavaScript(
+      this.js(
         '(function(){try{var w=innerWidth,out=[];var all=document.querySelectorAll("body *");' +
         'for(var i=0;i<all.length&&out.length<6;i++){var e=all[i];var r=e.getBoundingClientRect();' +
         'if(r.width===0&&r.height===0)continue;' +
@@ -410,7 +496,7 @@ struct Index {
         'return JSON.stringify({w:w,n:out.length,items:out});}catch(e){return "ERR:"+e.message;}})()')
         .then((r: string) => { hilog.info(0x0000, TAG, 'overflow %{public}s', r); })
         .catch(() => {});
-      this.controller.runJavaScript(
+      this.js(
         '(function(){try{var out=[],all=document.querySelectorAll("body *");' +
         'for(var i=0;i<all.length&&out.length<8;i++){var e=all[i];' +
         'if(!e.clientWidth&&!e.clientHeight)continue;' +
@@ -430,7 +516,7 @@ struct Index {
 
   private settle(): void {
     setTimeout(() => {
-      this.controller.runJavaScript(
+      this.js(
         '(function(){try{var b=document.body;' +
         'if(b.classList.contains("dsh-mobile-drawer")){' +
         'var t=document.querySelector("button[class*=_toggle]")||' +
@@ -449,7 +535,7 @@ struct Index {
       this.drawerOpen = false;
       return;
     }
-    this.controller.runJavaScript(
+    this.js(
       '(function(){try{return window.__dshListSessions?window.__dshListSessions():"[]";' +
       '}catch(e){return "[]";}})()')
       .then((r: string) => {
@@ -497,7 +583,7 @@ struct Index {
   }
 
   private pickSession(i: number): void {
-    this.controller.runJavaScript(
+    this.js(
       '(function(){try{return window.__dshClickSession?window.__dshClickSession(' + i + '):"nodrawer";' +
       '}catch(e){return "ERR";}})()')
       .then((r: string) => { hilog.info(0x0000, TAG, 'pick %{public}s', r); })
@@ -553,7 +639,7 @@ struct Index {
   }
 
   private probeSidebar(): void {
-    this.controller.runJavaScript(
+    this.js(
       '(function(){try{var col=document.querySelector("div[class*=_sidebarCol]");' +
       'if(!col){return "no sidebar col";}' +
       'var rows=[],all=col.querySelectorAll("*");' +
@@ -569,7 +655,7 @@ struct Index {
   }
 
   private mirrorDrawer(): void {
-    this.controller.runJavaScript(
+    this.js(
       '(function(){try{if(window.__dshMirror){return "on";}window.__dshMirror=true;' +
       'var prev=document.body.classList.contains("dsh-mobile-drawer");' +
       'new MutationObserver(function(){' +
@@ -584,7 +670,7 @@ struct Index {
   }
 
   private auditButtons(): void {
-    this.controller.runJavaScript(
+    this.js(
       '(function(){try{' +
       'function byText(re){var all=document.querySelectorAll("body *");' +
       'for(var i=0;i<all.length;i++){var e=all[i];var t=(e.innerText||"").trim();' +
@@ -792,6 +878,7 @@ struct Index {
           .javaScriptAccess(true)
           .fileAccess(true)
           .onPageBegin(() => {
+            this.webAlive = true;
             this.loading = true;
           })
           .onPageEnd(() => {
@@ -870,14 +957,23 @@ struct Index {
         // so resize the layout viewport instead of overlaying it.
         .keyboardAvoidMode(WebKeyboardAvoidMode.RESIZE_CONTENT)
         .onPageBegin(() => {
+          this.webAlive = true;
           this.loading = true;
           if (this.early.length > 0) {
-            this.controller.runJavaScript(this.early).catch(() => {});
+            this.js(this.early).catch(() => {});
           }
         })
         .onPageEnd((e: OnPageEndEvent) => {
           this.loading = false;
+          this.stopConnectWatchdog();
           this.injectOnce(e.url);
+        })
+        .onErrorReceive((e: OnErrorReceiveEvent) => {
+          // Subresource failures are routine on a chat page (CDN/offline assets);
+          // only a failed main frame means "that server is not reachable".
+          if (e.request.isMainFrame()) {
+            this.handleConnectFailure();
+          }
         })
         .onHttpErrorReceive((e: OnHttpErrorReceiveEvent) => {
           const code = e.response.getResponseCode();

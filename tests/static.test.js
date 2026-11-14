@@ -53,11 +53,11 @@ test('module.json5 requests only INTERNET (standalone: LAN-only, sockets need it
   assert.deepEqual(perms, ['ohos.permission.INTERNET']);
 });
 
-test('bundle name is cn.cnzht.dshmobile and version is 1.0.2 / 1000002', () => {
+test('bundle name is cn.cnzht.dshmobile and version is 1.0.3 / 1000003', () => {
   const src = read('AppScope/app.json5');
   assert.match(src, /"bundleName"\s*:\s*"cn\.cnzht\.dshmobile"/);
-  assert.match(src, /"versionName"\s*:\s*"1\.0\.2"/);
-  assert.match(src, /"versionCode"\s*:\s*1000002/);
+  assert.match(src, /"versionName"\s*:\s*"1\.0\.3"/);
+  assert.match(src, /"versionCode"\s*:\s*1000003/);
 });
 
 test('display name is Harness Mobile in the app and ability labels', () => {

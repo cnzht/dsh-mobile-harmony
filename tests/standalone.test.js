@@ -155,12 +155,12 @@ test('standalone: privacy policy and agreement are bundled local files', () => {
   assert.doesNotMatch(EULA, /不连接任何服务器/);
 });
 
-test('standalone: version is 1.0.2 / 1000002 everywhere it is declared', () => {
+test('standalone: version is 1.0.3 / 1000003 everywhere it is declared', () => {
   const app = read('AppScope/app.json5');
-  assert.match(app, /"versionName"\s*:\s*"1\.0\.2"/);
-  assert.match(app, /"versionCode"\s*:\s*1000002/);
+  assert.match(app, /"versionName"\s*:\s*"1\.0\.3"/);
+  assert.match(app, /"versionCode"\s*:\s*1000003/);
   const pkg = read('entry/oh-package.json5');
-  assert.match(pkg, /"version"\s*:\s*"1\.0\.2"/);
+  assert.match(pkg, /"version"\s*:\s*"1\.0\.3"/);
 });
 
 test('standalone: native drawer, About and privacy dialog are kept', () => {

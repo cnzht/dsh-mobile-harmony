@@ -2,6 +2,45 @@
 
 本项目遵循语义化版本。日期为 Asia/Shanghai。
 
+## 1.0.3 — 2026-11-14
+
+standalone 分支修正版，仍是**仅局域网**的单机/局域网版（不连接公共互联网）。
+版本 `1.0.3 (versionCode 1000003)`，包名 `cn.cnzht.dshmobile` 不变；可在 1.0.1/1.0.2
+之上直接覆盖安装。
+
+### 修复（Fixed）
+
+- **原生 Sessions 抽屉恒为空**（显示 "No sessions in this workspace"）：注入的
+  `window.__dshSessionRows` 原先按 `button` 收集会话，而当前 dsh web 的会话行是
+  `div[class*=_sessionRow][data-row-key="session:…"]`，因此永远拿不到行。现按
+  `data-row-key` 的 `session:` 前缀选行（无命中时回退 `div[class*=_sessionRow]`），
+  标题取 `span[class*=_title]`；`__dshClickSession(i)` 直接点击该行，`i<0` 时点
+  `button[class*=newSession]`。模拟器验证抽屉能列出真实会话并切换。
+- **注入脚本一直是语法错误**：`styleScript()` 里 `if(!window.__dshSessionRows){`
+  少一个右花括号，整段注入脚本是不合法的 JS，ArkWeb 静默拒绝执行——移动端覆盖
+  样式与 DOM 桥接从未生效过。补齐花括号，并用 `new Function()` 在测试里校验产物。
+- **连不存在的局域网地址时静默白屏**：主框架加载失败后 WebView 区域纯白、只剩原生
+  顶栏，没有任何提示。新增 20 秒连接看门狗与 `Web.onErrorReceive` 主框架错误处理，
+  失败时回配置页、保留用户输入的地址并提示
+  「无法连接服务器：请确认地址、端口与 dsh web 已启动，且手机与服务器在同一局域网」。
+- **上述失败处理本身会闪退**：回配置页后 Web 组件已卸载，延迟探针再调
+  `WebviewController.runJavaScript` 会**同步抛出** 17100001
+  （The WebviewController must be associated with a Web component），异常在
+  `setTimeout` 回调里未被捕获，进程直接退出（模拟器 jscrash 日志
+  `/data/log/faultlog/faultlogger/jscrash-cn.cnzht.dshmobile-*.log`）。现所有调用统一
+  走 `js()` 守卫：`webAlive` 为假时直接跳过，同步异常也捕获并降级为已拒绝的 Promise。
+- **不再注入上游 `mobile.css`**：该样式针对 dsh 0.1.5 的 DOM 编写，注入当前版本后
+  WebView 数秒内整页变白（`inject.js` 依据样式生效前的布局锁定状态，随后 DOM 查找
+  抛错）。文件保留作上游参考；手机端需要的部分（不自动弹侧栏/遮罩、40 px 触控目标、
+  输入框最高 32vh）由 `Index.ets` 内的运行时小覆盖承担。
+
+### 测试（Tests）
+
+- `node --test tests/` 共 **84** 个用例（新增会话桥、连接失败、`webAlive` 守卫回归）。
+- 模拟器（HarmonyOS 7.0.0.107，Mate 90 Pro 镜像）端到端：首启/局域网连接/工作区选择/
+  原生抽屉/About/重启自动重连/负向路径（公网地址、失效 token、无人监听的局域网地址）
+  全部通过；10 轮开关抽屉与 About 的稳定性循环无崩溃、无白屏，hilog 无 crash 标记。
+
 ## 1.0.1 — 2026-11-12
 
 华为应用市场 1.0.0 审核驳回（12 条）整改版。包名 `cn.cnzht.dshmobile` 不变，

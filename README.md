@@ -19,7 +19,7 @@
 | **原生会话抽屉** | 顶栏 `Sessions` 按钮打开 ArkUI 原生抽屉，可新建/切换会话（不受 WebView 层叠遮挡影响） |
 | **令牌失效自愈** | 识别主框架 401/403 后自动回配置页并回填旧地址 |
 | **键盘避让** | `WebKeyboardAvoidMode.RESIZE_CONTENT`，软键盘不再遮挡输入框 |
-| **移动端适配** | 内置上游 `early-polyfill.js` / `inject.js` / `mobile.css`，弹窗单列化、触控目标加大等 |
+| **移动端适配** | 内置上游 `early-polyfill.js` / `inject.js`，另注入一小组运行时覆盖（不自动弹侧栏抽屉、40 px 触控目标、输入框高度受限） |
 | **地址持久化** | `@ohos.data.preferences` 记住上次服务器，免重复输入 |
 | **关于/来源** | `About` 展示开发者、仓库、许可与免责声明入口 |
 | **仅一个权限** | 只申请 `ohos.permission.INTERNET`（已移除未使用的 `GET_NETWORK_INFO`） |
@@ -37,7 +37,7 @@
 | 账号/服务器 | 需要你自己部署的服务 | 无需服务器、无账号；也可连同一局域网内自部署的服务 |
 | 连接方式 | 扫码 / 手填地址 | 扫码 / 手填地址，但只接受局域网地址，公网地址拒绝并提示 |
 | 隐私政策/用户协议 | GitHub Pages 外链 | 打包在应用本地查看 |
-| 版本 | 1.0.1（1000001） | 1.0.2（1000002） |
+| 版本 | 1.0.1（1000001） | 1.0.3（1000003） |
 
 单机版的目标是更容易通过应用市场审核：按华为对单机应用的定义（未通过连接
 公共互联网提供互联网信息服务的移动应用程序），单机应用无需 APP 备案；审核员
@@ -48,7 +48,7 @@ About、原生 Sessions 抽屉、首启隐私弹窗与联网版一致；About �
 构建方式与联网版相同（见下文快速开始第 1 步）；单机版不需要第 2、3 步的公网
 隧道，服务器只需要在同一局域网内。
 
-> 注意：单机版与联网版是同一包名，上架时 1.0.2 会作为同一应用的新版本
+> 注意：单机版与联网版是同一包名，上架时 1.0.3 会作为同一应用的新版本
 > 替换联网版 1.0.1；是否另立应用条目，见 [docs/AGC-FORM.md](docs/AGC-FORM.md) 单机版一节。
 
 ## 环境要求
@@ -96,12 +96,17 @@ set HDC=%DEVECO_HOME%\sdk\default\openharmony\toolchains\hdc.exe
 ```
 ArkWeb(WebView)
   ├─ onPageBegin  → 注入 early-polyfill.js
-  └─ onPageEnd    → 注入 inject.js + mobile.css（每个文档仅一次）
+  └─ onPageEnd    → 注入 inject.js + 运行时覆盖样式（每个文档仅一次）
        ↓
   http(s)://<host>:<port>/?token=...    ← 局域网 / 公网隧道
        ↓
   `dsh web`（运行在你自己的电脑或服务器）
 ```
+
+> `entry/src/main/resources/rawfile/mobile.css`（上游 750 行移动端样式）保留在仓库中
+> 作为上游参考，但**不再注入**：它针对 dsh 0.1.5 的 DOM 编写，注入到当前 dsh 版本后
+> WebView 会在加载数秒后整页变白（`inject.js` 依据样式生效前的布局锁定状态，随后
+> 的 DOM 查找抛错）。手机端需要的部分改由 `Index.ets` 里的运行时覆盖承担。
 
 上游移动端适配层（第三方归属见 [NOTICE.md](NOTICE.md)）是
 *proot 容器 + `dsh web` + WebView*；HarmonyOS 没有 root 容器、也无法在手机上跑 Node，
@@ -112,7 +117,7 @@ ArkWeb(WebView)
 | 项 | 当前值 |
 |---|---|
 | 包名 | `cn.cnzht.dshmobile` |
-| 版本 | `1.0.2 (versionCode 1000002)`（standalone 分支；main 联网版为 1.0.1） |
+| 版本 | `1.0.3 (versionCode 1000003)`（standalone 分支；main 联网版为 1.0.1） |
 | 发布签名 | AGC 发布证书（ECC secp384r1 / SHA384withECDSA） |
 | 上架包 | `dist/dsh-mobile-release-signed.app`（约 102 KB） |
 
